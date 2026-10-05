@@ -1,0 +1,215 @@
+@import 'tailwindcss';
+
+/* Estilo idéntico al del motor de evaluación (CreditPulse): tema oscuro, acento azul, semáforo */
+@theme {
+  --color-navy-900: #060a13;
+  --color-navy-800: #0d1425;
+  --color-navy-700: #17233d;
+  --color-canvas: #0b1120;
+  --color-card: #131b2e;
+  --color-input: #0e1526;
+  --color-input-focus: #121a30;
+  --color-line: #26314c;
+  --color-ink: #eef1f9;
+  --color-muted: #96a1c2;
+
+  /* Acento (marca) */
+  --color-brand-50: rgba(91, 141, 255, 0.16);
+  --color-brand-100: rgba(91, 141, 255, 0.22);
+  --color-brand-200: rgba(91, 141, 255, 0.35);
+  --color-brand-500: #5b8dff;
+  --color-brand-600: #5b8dff;
+  --color-brand-700: #5b8dff;
+  --color-accent-dark: #3f6be0;
+
+  /* Semáforo */
+  --color-verde: #3ddc97;
+  --color-verde-bg: rgba(61, 220, 151, 0.14);
+  --color-amarillo: #fbbf24;
+  --color-amarillo-bg: rgba(251, 191, 36, 0.14);
+  --color-rojo: #f87171;
+  --color-rojo-bg: rgba(248, 113, 113, 0.14);
+
+  --shadow-card: 0 12px 32px -16px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
+  --font-sans: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 16.5px;
+  line-height: 1.58;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Tema claro: el menú lateral se queda oscuro (como en las apps bancarias); lo demás se aclara */
+html[data-theme='light'] {
+  --color-canvas: #f3f5fa;
+  --color-card: #ffffff;
+  --color-input: #f1f4fa;
+  --color-input-focus: #ffffff;
+  --color-line: #dbe2ef;
+  --color-ink: #0f1a33;
+  --color-muted: #5a6788;
+  --color-brand-50: rgba(63, 107, 224, 0.1);
+  --color-brand-100: rgba(63, 107, 224, 0.16);
+  --color-brand-200: rgba(63, 107, 224, 0.3);
+  --color-brand-500: #3f6be0;
+  --color-brand-600: #3f6be0;
+  --color-brand-700: #2f56c4;
+  --color-accent-dark: #2f56c4;
+  --color-verde: #0d8f58;
+  --color-verde-bg: rgba(13, 143, 88, 0.11);
+  --color-amarillo: #a96b00;
+  --color-amarillo-bg: rgba(217, 140, 0, 0.14);
+  --color-rojo: #d33a3a;
+  --color-rojo-bg: rgba(211, 58, 58, 0.1);
+  --shadow-card: 0 10px 28px -18px rgba(22, 40, 90, 0.35), 0 1px 4px rgba(22, 40, 90, 0.08);
+}
+html[data-theme='light'] input,
+html[data-theme='light'] select,
+html[data-theme='light'] textarea {
+  color-scheme: light;
+}
+html[data-theme='light'] * {
+  scrollbar-color: #b6c0d8 #eef1f8;
+}
+html[data-theme='light'] ::-webkit-scrollbar-track {
+  background: #eef1f8;
+}
+html[data-theme='light'] ::-webkit-scrollbar-thumb {
+  background: #b6c0d8;
+}
+html {
+  transition: background-color 0.2s ease;
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: -0.01em;
+}
+
+a {
+  text-decoration: none;
+}
+
+* {
+  scrollbar-color: #3a4568 var(--color-navy-800);
+  scrollbar-width: thin;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-navy-800);
+}
+::-webkit-scrollbar-thumb {
+  background: #3a4568;
+  border-radius: 999px;
+}
+
+/* Evita el zoom automático de iOS al enfocar un campo; controles nativos en oscuro */
+input,
+select,
+textarea {
+  font-size: 16px;
+  color-scheme: dark;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Mapa de agencias (estilo Apple Maps) ---- */
+.bv-pin-wrap,
+.bv-yo-wrap {
+  background: transparent !important;
+  border: 0 !important;
+}
+.bv-pin {
+  position: relative;
+  width: 38px;
+  height: 46px;
+  transform-origin: 50% 100%;
+  transition: transform 0.18s cubic-bezier(0.3, 1.4, 0.5, 1);
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.35));
+}
+.bv-pin__cuerpo {
+  position: absolute;
+  inset: 0 0 8px 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--c);
+  border: 2.5px solid #fff;
+}
+.bv-pin__punta {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  width: 12px;
+  height: 12px;
+  background: var(--c);
+  border-right: 2.5px solid #fff;
+  border-bottom: 2.5px solid #fff;
+  transform: translateX(-50%) rotate(45deg) scale(0.85);
+  z-index: -1;
+}
+.bv-pin--activo {
+  transform: scale(1.28);
+}
+.leaflet-marker-icon:hover .bv-pin {
+  transform: scale(1.12);
+}
+.bv-yo {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #2f7bff;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15), 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+.bv-yo span {
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid #2f7bff;
+  animation: bv-pulso 2s ease-out infinite;
+}
+@keyframes bv-pulso {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+.bv-mapa .leaflet-container {
+  font-family: var(--font-sans);
+  background: var(--color-input);
+}
+.bv-mapa .leaflet-control-attribution {
+  background: rgba(255, 255, 255, 0.7);
+  font-size: 10px;
+  border-radius: 8px 0 0 0;
+}
+/* En móvil la hoja tapa la parte baja: la atribución (obligatoria) pasa arriba a la izquierda */
+@media (max-width: 1023px) {
+  .bv-mapa .leaflet-bottom.leaflet-right {
+    right: auto;
+    left: 0;
+    bottom: auto;
+    top: 0;
+  }
+  .bv-mapa .leaflet-control-attribution {
+    border-radius: 0 0 8px 0;
+  }
+}
