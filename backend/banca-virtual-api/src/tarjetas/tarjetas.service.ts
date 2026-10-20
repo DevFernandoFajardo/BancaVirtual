@@ -69,12 +69,21 @@ export class TarjetasService {
         const limite = c.limite_centavos !== undefined ? Number(c.limite_centavos) / 100 : null;
         const usado = c.principal_centavos !== undefined ? (Number(c.principal_centavos) + Number(c.interes_centavos ?? 0)) / 100 : null;
         const antes = await this.db.one<{ estado: string }>('SELECT estado FROM tarjetas WHERE id = $1', [r.id]);
+        const [previa] = antes ? await this.conOrigen([{ id: r.id, estado: antes.estado }]) : [null];
+        // El bloqueo que puso el cliente aquí se respeta aunque CP aún no lo muestre
+        if (previa?.bloqueadaPor === 'CLIENTE' && estado === 'ACTIVA') continue;
         await this.db.query(
           `UPDATE tarjetas SET estado = $2, ultimos4 = COALESCE($3, ultimos4),
                   limite = COALESCE($4::numeric, limite), saldo_utilizado = COALESCE($5::numeric, saldo_utilizado)
             WHERE id = $1`,
           [r.id, estado, c.ultimos_cuatro ? String(c.ultimos_cuatro) : null, limite, usado],
         );
+        // Bloqueo que viene del banco: el cliente no puede deshacerlo. Si el banco la activa, se libera.
+        if (estado === 'BLOQUEADA' && previa?.bloqueadaPor !== 'CLIENTE') {
+          await this.db.query("UPDATE tarjetas SET bloqueo_origen = 'BANCO' WHERE id = $1", [r.id]);
+        } else if (estado === 'ACTIVA') {
+          await this.db.query('UPDATE tarjetas SET bloqueo_origen = NULL WHERE id = $1', [r.id]);
+        }
         if (antes && antes.estado !== estado) {
           await this.notificaciones.crear(
             clienteId,
@@ -91,6 +100,24 @@ export class TarjetasService {
     }
   }
 
+  /** Quién bloqueó la tarjeta: 'CLIENTE' (puede desbloquearla) o 'BANCO' (solo el banco). Columna de 04_cp_gestiones.sql. */
+  private async origenes(ids: string[]): Promise<Map<string, string | null>> {
+    const m = new Map<string, string | null>();
+    if (!ids.length) return m;
+    try {
+      const rows = await this.db.rows<{ id: string; o: string | null }>('SELECT id, bloqueo_origen AS o FROM tarjetas WHERE id = ANY($1::uuid[])', [ids]);
+      rows.forEach((r) => m.set(r.id, r.o));
+    } catch {
+      /* columna aún sin crear */
+    }
+    return m;
+  }
+
+  private async conOrigen<T extends { id: string; estado: string }>(rows: T[]): Promise<(T & { bloqueadaPor: string | null })[]> {
+    const o = await this.origenes(rows.map((r) => r.id));
+    return rows.map((r) => ({ ...r, bloqueadaPor: r.estado === 'BLOQUEADA' ? (o.get(r.id) ?? 'CLIENTE') : null }));
+  }
+
   /** Espera la sincronización como máximo unos segundos para no trabar la pantalla si CP está dormido. */
   private async sincronizarRapido(clienteId: string) {
     await Promise.race([this.sincronizarConCp(clienteId), new Promise((r) => setTimeout(r, 4000))]);
@@ -98,7 +125,7 @@ export class TarjetasService {
 
   async listar(clienteId: string) {
     await this.sincronizarRapido(clienteId);
-    return this.db.rows<Tarjeta>(`SELECT ${TARJETA_COLS} FROM tarjetas WHERE cliente_id = $1 ORDER BY created_at`, [clienteId]);
+    return this.conOrigen(await this.db.rows<Tarjeta>(`SELECT ${TARJETA_COLS} FROM tarjetas WHERE cliente_id = $1 ORDER BY created_at`, [clienteId]));
   }
 
   private async obtener(clienteId: string, id: string): Promise<Tarjeta> {
@@ -115,7 +142,8 @@ export class TarjetasService {
          FROM tarjeta_movimientos WHERE tarjeta_id = $1 ORDER BY created_at DESC, id DESC LIMIT 50`,
       [id],
     );
-    return { ...tarjeta, movimientos };
+    const [conO] = await this.conOrigen([tarjeta]);
+    return { ...conO, movimientos };
   }
 
   /** Si la tarjeta también existe en CP Gestiones, el bloqueo hecho aquí se aplica allá (mejor esfuerzo). */
@@ -136,8 +164,15 @@ export class TarjetasService {
   }
 
   async bloquear(clienteId: string, id: string, bloquear: boolean) {
-    await this.obtener(clienteId, id);
+    const actual = await this.obtener(clienteId, id);
+    if (!bloquear && actual.estado === 'BLOQUEADA') {
+      const [o] = await this.conOrigen([actual]);
+      if (o.bloqueadaPor === 'BANCO') {
+        throw new ForbiddenException('El banco bloqueó esta tarjeta. Solo el banco puede desbloquearla: comunícate con tu agencia.');
+      }
+    }
     await this.db.query(`UPDATE tarjetas SET estado = $2 WHERE id = $1`, [id, bloquear ? 'BLOQUEADA' : 'ACTIVA']);
+    await this.db.query('UPDATE tarjetas SET bloqueo_origen = $2 WHERE id = $1', [id, bloquear ? 'CLIENTE' : null]).catch(() => undefined);
     const t = await this.obtener(clienteId, id);
     await this.empujarEstadoACp(clienteId, id, bloquear);
     await this.notificaciones.crear(

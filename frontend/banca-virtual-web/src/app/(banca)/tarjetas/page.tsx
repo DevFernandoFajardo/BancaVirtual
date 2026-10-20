@@ -192,6 +192,10 @@ export default function TarjetasPage() {
                 <Button variant="danger" loading={trabajando} onClick={() => ejecutar(() => tarjetasService.bloquear(t.id), 'Tarjeta bloqueada.')}>
                   Bloquear
                 </Button>
+              ) : t.bloqueadaPor === 'BANCO' ? (
+                <p className="flex-1 rounded-[10px] border border-rojo/40 bg-rojo/10 px-4 py-2.5 text-sm text-rojo" role="status">
+                  El banco bloqueó esta tarjeta. Solo el banco puede desbloquearla: comunícate con tu agencia.
+                </p>
               ) : (
                 <Button variant="secondary" loading={trabajando} onClick={() => ejecutar(() => tarjetasService.desbloquear(t.id), 'Tarjeta desbloqueada.')}>
                   Desbloquear

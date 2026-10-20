@@ -12,3 +12,5 @@ ALTER TABLE solicitudes ADD COLUMN IF NOT EXISTS monto_solicitado numeric(14,2);
 ALTER TABLE solicitudes ADD COLUMN IF NOT EXISTS cp_estado varchar(30);
 -- Vinculo de la tarjeta local con la tarjeta emitida en CP Gestiones (para reflejar bloqueos y saldos)
 ALTER TABLE tarjetas ADD COLUMN IF NOT EXISTS cp_tarjeta_id varchar(80);
+-- Quien bloqueo la tarjeta: 'CLIENTE' (puede desbloquear) o 'BANCO' (solo el banco)
+ALTER TABLE tarjetas ADD COLUMN IF NOT EXISTS bloqueo_origen varchar(10);

@@ -84,6 +84,8 @@ export interface Tarjeta {
   saldoUtilizado: number;
   disponible: number;
   estado: 'ACTIVA' | 'BLOQUEADA';
+  /** Quién la bloqueó: el propio cliente (puede desbloquear) o el banco (no puede) */
+  bloqueadaPor?: 'CLIENTE' | 'BANCO' | null;
   createdAt: string;
 }
 
