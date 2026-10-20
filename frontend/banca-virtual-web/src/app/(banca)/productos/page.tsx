@@ -32,9 +32,8 @@ const FORM_VACIO = {
   montoSolicitado: '',
 };
 
-/** Productos que piden monto, con su rango (Q). La precalificación general no lleva monto. */
+/** Préstamos que piden monto, con su rango (Q). La tarjeta de crédito no: el banco asigna el límite según tu perfil. */
 const RANGO_MONTO: Record<string, { min: number; max: number; etiqueta: string }> = {
-  TARJETA_CREDITO: { min: 1_000, max: 50_000, etiqueta: 'Límite de crédito solicitado (Q)' },
   CREDITO_PERSONAL: { min: 1_000, max: 300_000, etiqueta: 'Monto del préstamo (Q)' },
   CREDITO_VEHICULAR: { min: 1_000, max: 600_000, etiqueta: 'Monto del préstamo (Q)' },
   PRESTAMO_HIPOTECARIO: { min: 1_000, max: 3_000_000, etiqueta: 'Monto del préstamo (Q)' },
@@ -200,7 +199,7 @@ export default function ProductosPage() {
 
       {seleccion && (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-6"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-6"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget && !enviando) setSeleccion(null);
           }}
@@ -208,24 +207,50 @@ export default function ProductosPage() {
           aria-modal="true"
           aria-labelledby="titulo-solicitud"
         >
-        <Card className="relative w-full max-w-2xl animate-[fadeUp_.22s_ease-out] rounded-t-[22px] rounded-b-none p-6 shadow-2xl sm:rounded-[22px] sm:p-8">
-          <button
-            type="button"
-            onClick={() => setSeleccion(null)}
-            disabled={enviando}
-            aria-label="Cerrar"
-            className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full text-muted transition hover:bg-white/10 hover:text-ink"
-          >
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-              <path d="M6 6l12 12M18 6 6 18" />
-            </svg>
-          </button>
-          <p className="text-[.72rem] font-extrabold uppercase tracking-[0.08em] text-brand-600">Nueva solicitud</p>
-          <h2 id="titulo-solicitud" className="mt-1 pr-10 text-xl font-bold">
-            {PRODUCTOS.find((p) => p.codigo === seleccion)?.nombre}
-          </h2>
-          <p className="mt-1 text-sm text-muted">Llena el formulario; evaluaremos tu perfil y tú decides si aceptas la oferta.</p>
-          <form onSubmit={(e) => enviar(seleccion, e)} className="mt-5 space-y-4" noValidate>
+          <div className="relative flex max-h-[94dvh] w-full max-w-2xl animate-[fadeUp_.22s_ease-out] flex-col overflow-hidden rounded-t-[24px] border border-line bg-card shadow-2xl sm:max-h-[90dvh] sm:rounded-[22px]">
+            {/* Encabezado fijo */}
+            <div className="relative shrink-0 border-b border-line px-5 pb-4 pt-5 sm:px-8 sm:pt-7">
+              <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-line sm:hidden" aria-hidden="true" />
+              <button
+                type="button"
+                onClick={() => setSeleccion(null)}
+                disabled={enviando}
+                aria-label="Cerrar"
+                className="absolute right-3 top-3 grid h-10 w-10 place-items-center rounded-full text-muted transition hover:bg-white/10 hover:text-ink sm:right-5 sm:top-5"
+              >
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6 6 18" />
+                </svg>
+              </button>
+              <p className="text-[.7rem] font-extrabold uppercase tracking-[0.08em] text-brand-600">Nueva solicitud</p>
+              <h2 id="titulo-solicitud" className="mt-1 pr-10 text-lg font-bold sm:text-xl">
+                {PRODUCTOS.find((p) => p.codigo === seleccion)?.nombre}
+              </h2>
+              <p className="mt-1 text-[.82rem] text-muted">
+                {rango
+                  ? 'Cuéntanos cuánto necesitas y llena tus datos; evaluaremos tu perfil y tú decides si aceptas la oferta.'
+                  : 'Llena tus datos; evaluaremos tu perfil y tú decides si aceptas la oferta. El límite lo define el banco según tu perfil.'}
+              </p>
+            </div>
+
+            <form onSubmit={(e) => enviar(seleccion, e)} className="flex min-h-0 flex-1 flex-col" noValidate>
+              {/* Campos: es lo único que se desplaza */}
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 py-5 sm:px-8">
+            {rango && (
+              <Field
+                label={rango.etiqueta}
+                type="number"
+                inputMode="decimal"
+                min={rango.min}
+                max={rango.max}
+                step="100"
+                required
+                value={form.montoSolicitado}
+                onChange={set('montoSolicitado')}
+                hint={`Entre ${rango.min.toLocaleString('es-GT')} y ${rango.max.toLocaleString('es-GT')}`}
+                error={form.montoSolicitado !== '' && !montoOk ? 'Monto fuera del rango permitido' : undefined}
+              />
+            )}
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Primer nombre" required value={form.primerNombre} onChange={set('primerNombre')} />
               <Field label="Primer apellido" required value={form.primerApellido} onChange={set('primerApellido')} />
@@ -282,31 +307,19 @@ export default function ProductosPage() {
                 onChange={set('antiguedadLaboralMeses')}
               />
             </div>
-            {rango && (
-              <Field
-                label={rango.etiqueta}
-                type="number"
-                inputMode="decimal"
-                min={rango.min}
-                max={rango.max}
-                step="100"
-                required
-                value={form.montoSolicitado}
-                onChange={set('montoSolicitado')}
-                hint={`Entre ${rango.min.toLocaleString('es-GT')} y ${rango.max.toLocaleString('es-GT')}`}
-                error={form.montoSolicitado !== '' && !montoOk ? 'Monto fuera del rango permitido' : undefined}
-              />
-            )}
-            <div className="grid gap-3 pt-1 sm:grid-cols-[1fr_2fr]">
-              <Button type="button" variant="secondary" onClick={() => setSeleccion(null)} disabled={enviando}>
-                Cancelar
-              </Button>
-              <Button type="submit" loading={enviando} disabled={!formOk}>
-                Enviar solicitud
-              </Button>
-            </div>
-          </form>
-        </Card>
+              </div>
+
+              {/* Botones siempre visibles */}
+              <div className="grid shrink-0 grid-cols-2 gap-3 border-t border-line bg-card px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 sm:grid-cols-[1fr_2fr] sm:px-8 sm:pb-6">
+                <Button type="button" variant="secondary" onClick={() => setSeleccion(null)} disabled={enviando}>
+                  Cancelar
+                </Button>
+                <Button type="submit" loading={enviando} disabled={!formOk}>
+                  Enviar solicitud
+                </Button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

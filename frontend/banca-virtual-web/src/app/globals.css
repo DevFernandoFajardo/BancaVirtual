@@ -222,3 +222,19 @@ textarea {
 @media (prefers-reduced-motion: reduce) {
   [role='dialog'] > * { animation: none !important; }
 }
+
+/* Móvil: campos de fecha que no se salen de su contenedor y sin zoom automático de iOS al enfocar */
+input[type='date'] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+}
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
