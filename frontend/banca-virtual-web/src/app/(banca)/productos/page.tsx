@@ -87,6 +87,18 @@ export default function ProductosPage() {
 
   const dpiOk = /^\d{13}$/.test(form.dpi);
   const nitOk = /^[0-9]{1,12}(-?[0-9Kk])?$/.test(form.nit);
+  useEffect(() => {
+    if (!seleccion) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !enviando && setSeleccion(null);
+    window.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [seleccion, enviando]);
+
   const rango = seleccion ? RANGO_MONTO[seleccion] : undefined;
   const montoNum = Number(form.montoSolicitado);
   const montoOk = !rango || (form.montoSolicitado !== '' && montoNum >= rango.min && montoNum <= rango.max);
@@ -163,7 +175,7 @@ export default function ProductosPage() {
                 const vigente = solicitudes?.find((s) => s.productoCodigo === p.codigo && VIGENTES.includes(s.estado));
                 const activo = seleccion === p.codigo;
                 return (
-                  <Card key={p.codigo} className={`flex flex-col ${activo ? 'ring-2 ring-brand-500' : ''}`}>
+                  <Card key={p.codigo} className={`flex flex-col transition hover:-translate-y-0.5 hover:shadow-card ${activo ? 'ring-2 ring-brand-500' : ''}`}>
                     <h4 className="font-semibold">{p.nombre}</h4>
                     <p className="mt-1 flex-1 text-sm text-muted">{p.descripcion}</p>
                     {vigente ? (
@@ -173,10 +185,9 @@ export default function ProductosPage() {
                     ) : (
                       <Button
                         className="mt-4"
-                        variant={activo ? 'secondary' : 'primary'}
-                        onClick={() => setSeleccion(activo ? null : p.codigo)}
+                        onClick={() => setSeleccion(p.codigo)}
                       >
-                        {activo ? 'Cancelar' : 'Solicitar'}
+                        Solicitar
                       </Button>
                     )}
                   </Card>
@@ -188,8 +199,31 @@ export default function ProductosPage() {
       </section>
 
       {seleccion && (
-        <Card>
-          <h2 className="font-semibold">Solicitud: {PRODUCTOS.find((p) => p.codigo === seleccion)?.nombre}</h2>
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-6"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !enviando) setSeleccion(null);
+          }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="titulo-solicitud"
+        >
+        <Card className="relative w-full max-w-2xl animate-[fadeUp_.22s_ease-out] rounded-t-[22px] rounded-b-none p-6 shadow-2xl sm:rounded-[22px] sm:p-8">
+          <button
+            type="button"
+            onClick={() => setSeleccion(null)}
+            disabled={enviando}
+            aria-label="Cerrar"
+            className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full text-muted transition hover:bg-white/10 hover:text-ink"
+          >
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+          <p className="text-[.72rem] font-extrabold uppercase tracking-[0.08em] text-brand-600">Nueva solicitud</p>
+          <h2 id="titulo-solicitud" className="mt-1 pr-10 text-xl font-bold">
+            {PRODUCTOS.find((p) => p.codigo === seleccion)?.nombre}
+          </h2>
           <p className="mt-1 text-sm text-muted">Llena el formulario; evaluaremos tu perfil y tú decides si aceptas la oferta.</p>
           <form onSubmit={(e) => enviar(seleccion, e)} className="mt-5 space-y-4" noValidate>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -263,11 +297,17 @@ export default function ProductosPage() {
                 error={form.montoSolicitado !== '' && !montoOk ? 'Monto fuera del rango permitido' : undefined}
               />
             )}
-            <Button type="submit" full loading={enviando} disabled={!formOk}>
-              Enviar solicitud
-            </Button>
+            <div className="grid gap-3 pt-1 sm:grid-cols-[1fr_2fr]">
+              <Button type="button" variant="secondary" onClick={() => setSeleccion(null)} disabled={enviando}>
+                Cancelar
+              </Button>
+              <Button type="submit" loading={enviando} disabled={!formOk}>
+                Enviar solicitud
+              </Button>
+            </div>
           </form>
         </Card>
+        </div>
       )}
     </div>
   );
