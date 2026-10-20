@@ -40,11 +40,7 @@ export interface RegisterRequest {
   primerNombre: string;
   primerApellido: string;
   dpi: string;
-  nit: string;
   fechaNacimiento: string;
-  ingresosMensuales: number;
-  tipoEmpleo: string;
-  antiguedadLaboralMeses?: number;
 }
 
 export interface UpdatePerfilRequest {

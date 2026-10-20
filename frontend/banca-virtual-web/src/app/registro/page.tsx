@@ -6,14 +6,9 @@ import { useState, type FormEvent } from 'react';
 import { Alert } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { Field, SelectField } from '@/components/ui/Field';
+import { Field } from '@/components/ui/Field';
 import { errorMessage } from '@/lib/api';
 import { authService } from '@/services/auth/auth.service';
-
-const EMPLEOS = [
-  { value: 'Asalariado', label: 'Asalariado' },
-  { value: 'Independiente', label: 'Independiente' },
-];
 
 export default function RegistroPage() {
   const router = useRouter();
@@ -23,11 +18,7 @@ export default function RegistroPage() {
     email: '',
     password: '',
     dpi: '',
-    nit: '',
     fechaNacimiento: '',
-    ingresosMensuales: '',
-    tipoEmpleo: 'Asalariado',
-    antiguedadLaboralMeses: '',
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -48,11 +39,7 @@ export default function RegistroPage() {
         primerNombre: f.primerNombre.trim(),
         primerApellido: f.primerApellido.trim(),
         dpi: f.dpi,
-        nit: f.nit.trim(),
         fechaNacimiento: f.fechaNacimiento,
-        ingresosMensuales: Number(f.ingresosMensuales),
-        tipoEmpleo: f.tipoEmpleo,
-        antiguedadLaboralMeses: f.antiguedadLaboralMeses ? Number(f.antiguedadLaboralMeses) : 0,
       });
       router.replace('/dashboard');
     } catch (err) {
@@ -72,7 +59,7 @@ export default function RegistroPage() {
         <p className="text-[.78rem] font-extrabold uppercase tracking-[0.08em] text-brand-600">Registro</p>
         <h1 className="mt-[7px] text-[1.25rem] font-bold">Crea tu cuenta</h1>
         <p className="mt-1 text-sm text-muted">
-          Al registrarte abrimos tu primera cuenta de ahorro. Tus datos se usan para evaluar los productos que solicites.
+          Al registrarte abrimos tu primera cuenta de ahorro. Los datos de empleo e ingresos te los pediremos cuando solicites un producto.
         </p>
 
         <form onSubmit={onSubmit} className="mt-6 space-y-4" noValidate>
@@ -105,24 +92,14 @@ export default function RegistroPage() {
               hint="13 dígitos"
               error={f.dpi && !dpiOk ? 'El DPI debe tener 13 dígitos' : undefined}
             />
-            <Field label="NIT" required value={f.nit} onChange={set('nit')} placeholder="1234567-8" />
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Fecha de nacimiento" type="date" required value={f.fechaNacimiento} onChange={set('fechaNacimiento')} max={new Date().toISOString().slice(0, 10)} />
-            <SelectField label="Tipo de empleo" options={EMPLEOS} value={f.tipoEmpleo} onChange={set('tipoEmpleo')} />
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Ingresos mensuales (Q)" type="number" inputMode="decimal" min={0} step="0.01" required value={f.ingresosMensuales} onChange={set('ingresosMensuales')} />
-            <Field label="Antigüedad laboral (meses)" type="number" inputMode="numeric" min={0} value={f.antiguedadLaboralMeses} onChange={set('antiguedadLaboralMeses')} />
           </div>
 
           <Button
             type="submit"
             full
             loading={loading}
-            disabled={!f.primerNombre || !f.primerApellido || !f.email || !passOk || !dpiOk || !f.nit || !f.fechaNacimiento || f.ingresosMensuales === ''}
+            disabled={!f.primerNombre || !f.primerApellido || !f.email || !passOk || !dpiOk || !f.fechaNacimiento}
           >
             Crear cuenta
           </Button>

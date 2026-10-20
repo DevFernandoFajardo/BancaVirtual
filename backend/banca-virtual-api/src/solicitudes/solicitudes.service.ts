@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { encrypt } from '../common/crypto.util';
 import { ClientesService } from '../clientes/clientes.service';
 import { CpGestionesService } from '../cp/cp-gestiones.service';
 import { CoreClient } from '../core/core.client';
@@ -60,6 +61,11 @@ export class SolicitudesService {
     };
 
     const evaluacion = await this.core.evaluar(payload);
+    // Los datos detallados que se piden aquí quedan en el perfil del cliente (se envían luego a CP Gestiones al aceptar)
+    await this.db.query(
+      `UPDATE clientes SET nit_cifrado = $2, ingresos_mensuales = $3, tipo_empleo = $4, antiguedad_laboral_meses = $5, updated_at = now() WHERE id = $1`,
+      [clienteId, encrypt(dto.nit), dto.ingresosMensuales.toFixed(2), dto.tipoEmpleo, dto.antiguedadLaboralMeses],
+    );
     const politicas = [...(evaluacion.Politicas ?? [])].sort((a, b) => a.Orden - b.Orden);
 
     try {

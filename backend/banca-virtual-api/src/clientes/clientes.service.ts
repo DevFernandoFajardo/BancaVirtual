@@ -10,11 +10,11 @@ export interface NuevoCliente {
   primerApellido: string;
   dpi: string;
   dpiHash: string;
-  nit: string;
+  nit?: string;
   fechaNacimiento: string;
-  ingresosMensuales: number;
-  tipoEmpleo: string;
-  antiguedadLaboralMeses: number;
+  ingresosMensuales?: number;
+  tipoEmpleo?: string;
+  antiguedadLaboralMeses?: number;
 }
 
 @Injectable()
@@ -54,11 +54,11 @@ export class ClientesService {
         d.primerApellido,
         encrypt(d.dpi),
         d.dpiHash,
-        encrypt(d.nit),
+        d.nit ? encrypt(d.nit) : null,
         d.fechaNacimiento,
-        d.ingresosMensuales.toFixed(2),
-        d.tipoEmpleo,
-        d.antiguedadLaboralMeses,
+        (d.ingresosMensuales ?? 0).toFixed(2),
+        d.tipoEmpleo ?? null,
+        d.antiguedadLaboralMeses ?? 0,
       ],
       tx,
     );

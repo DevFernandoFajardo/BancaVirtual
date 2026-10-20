@@ -45,21 +45,24 @@ export class RegisterDto {
   @Matches(/^\d{13}$/, { message: 'El DPI debe tener 13 dígitos' })
   dpi: string;
 
+  @IsOptional()
   @IsString()
   @Matches(/^[0-9]{1,12}(-?[0-9Kk])?$/, { message: 'NIT inválido' })
-  nit: string;
+  nit?: string;
 
   @IsDateString()
   fechaNacimiento: string;
 
+  @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   @Max(100_000_000)
-  ingresosMensuales: number;
+  ingresosMensuales?: number;
 
+  @IsOptional()
   @IsString()
   @MaxLength(40)
-  tipoEmpleo: string;
+  tipoEmpleo?: string;
 
   @IsOptional()
   @IsInt()
