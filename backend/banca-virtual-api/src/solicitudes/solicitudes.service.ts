@@ -136,11 +136,7 @@ export class SolicitudesService {
   private async enviarACp(s: Solicitud) {
     try {
       const cliente = await this.clientes.obtener(s.clienteId);
-      const cpId = await this.cpGestiones.registrarGestion(cliente, {
-        gestionRef: s.id,
-        evaluacionRef: String(s.evaluacionId),
-        aceptadaEn: s.decisionClienteAt ?? new Date(),
-      });
+      const cpId = await this.cpGestiones.registrarGestion(cliente, { gestionRef: s.id, productoCodigo: s.productoCodigo });
       await this.db.query('UPDATE solicitudes SET cp_gestion_id = $2, cp_error = NULL WHERE id = $1', [s.id, cpId]);
     } catch (err: any) {
       const msg = String(err?.response?.message ?? err?.message ?? 'Error desconocido').slice(0, 290);

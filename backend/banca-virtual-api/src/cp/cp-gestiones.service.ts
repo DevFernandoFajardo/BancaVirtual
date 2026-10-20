@@ -1,16 +1,33 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, UnprocessableEntityException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { Cliente } from '../clientes/clientes.schema';
 import { CpClient } from './cp.client';
 
 export interface GestionParaCp {
+  /** Número de gestión de BancaVirtual (id local de la solicitud) */
   gestionRef: string;
-  evaluacionRef: string;
-  aceptadaEn: Date;
+  /** Código del producto en BancaVirtual/CreditPulse, p. ej. TARJETA_CREDITO */
+  productoCodigo: string;
 }
 
+/** Códigos de producto de BancaVirtual -> códigos de CP Gestiones. "GENERAL" (precalificación) no es un producto. */
+const PRODUCTO_CP: Record<string, string> = {
+  TARJETA_CREDITO: 'credito-clasica',
+  CREDITO_PERSONAL: 'credito-personal',
+  CREDITO_VEHICULAR: 'credito-vehicular',
+  PRESTAMO_HIPOTECARIO: 'credito-hipotecario',
+};
+
+/** BancaVirtual no pide el monto en el formulario, pero CP Gestiones sí: se envía un monto de referencia por producto. */
+const MONTO_REFERENCIA: Record<string, number> = {
+  'credito-clasica': 10_000,
+  'credito-personal': 30_000,
+  'credito-vehicular': 120_000,
+  'credito-hipotecario': 600_000,
+};
+
 /**
- * Envía a CP Gestiones las gestiones (productos) que el cliente acepta.
+ * Envía a CP Gestiones las gestiones (productos) que el cliente acepta (contrato v2: el cliente se identifica por DPI).
  * Es "mejor esfuerzo": si CP Gestiones no responde, la solicitud local sigue su curso y el error queda guardado.
  */
 @Injectable()
@@ -19,61 +36,70 @@ export class CpGestionesService {
 
   constructor(private readonly cp: CpClient) {}
 
-  /** Contraseña aleatoria que cumple las reglas de CP (12-72, mayúscula, minúscula y número). El login sigue siendo local. */
+  /** Contraseña aleatoria que cumple la regla de CP (8-72, letras y números). El inicio de sesión de BancaVirtual es local. */
   private claveTecnica(): string {
     return 'Bv' + randomBytes(18).toString('base64url').replace(/[^A-Za-z0-9]/g, 'x') + '7a';
   }
 
-  /** Crea al cliente en CP Gestiones si aún no existe (409/422 por duplicado se tratan como "ya existe"). */
+  private static codigoDe(err: any): string | undefined {
+    try {
+      return err?.getResponse?.()?.code;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Crea el perfil en CP Gestiones si aún no existe. Si el DPI ya existe en el banco, CP lo vincula (mismo DPI, correo y fecha). */
   private async asegurarCliente(c: Cliente): Promise<void> {
-    const fecha = c.fechaNacimiento ? String(c.fechaNacimiento).slice(0, 10) : undefined;
     try {
       await this.cp.post(
         '/banca/registro',
         {
-          cliente_ref: c.id,
           nombre: c.primerNombre,
           apellido: c.primerApellido,
           correo_electronico: c.email,
           contrasena: this.claveTecnica(),
           dpi: c.dpi,
-          nit: c.nit,
-          fecha_nacimiento: fecha,
-          tipo_empleo: c.tipoEmpleo === 'Independiente' ? 'Independiente' : 'Asalariado',
-          ingresos_mensuales_q: Number(c.ingresosMensuales),
-          antiguedad_laboral_meses: c.antiguedadLaboralMeses ?? 0,
+          fecha_nacimiento: String(c.fechaNacimiento).slice(0, 10),
         },
         { idempotencyKey: `reg-${c.id}` },
       );
     } catch (err: any) {
-      const status = err?.getStatus?.();
-      // 409 / 422: el cliente (o su correo/DPI) ya está en CP; se intenta la gestión de todos modos
-      if (status !== 409 && status !== 422) throw err;
-      this.logger.warn(`Registro en CP omitido (${status}): ${err?.message}`);
+      // CUSTOMER_EXISTS: ya tiene perfil en CP, se sigue. CUSTOMER_LINK_REJECTED y demás errores sí se informan.
+      if (CpGestionesService.codigoDe(err) !== 'CUSTOMER_EXISTS') throw err;
     }
-  }
-
-  /** Fecha ISO 8601 en hora de Guatemala (UTC-6, sin horario de verano), sin milisegundos: 2026-10-07T11:30:00-06:00 */
-  private static iso(d: Date): string {
-    const g = new Date(d.getTime() - 6 * 3600 * 1000);
-    return g.toISOString().replace(/\.\d{3}Z$/, '-06:00');
   }
 
   /** Devuelve el id de la gestión creada en CP Gestiones (si lo informa). */
   async registrarGestion(cliente: Cliente, g: GestionParaCp): Promise<string | null> {
+    const producto = PRODUCTO_CP[g.productoCodigo];
+    if (!producto) throw new UnprocessableEntityException('Este producto no se gestiona en CP Gestiones');
+    if (!cliente.dpi || !cliente.fechaNacimiento) throw new UnprocessableEntityException('El cliente no tiene DPI o fecha de nacimiento');
+
     await this.asegurarCliente(cliente);
-    const r = await this.cp.post<any>(
-      '/banca/gestiones',
-      {
-        cliente_ref: cliente.id,
-        gestion_ref: g.gestionRef,
-        evaluacion_ref: g.evaluacionRef,
-        referencia_aceptacion: `consent-${g.gestionRef}`,
-        aceptada_en: CpGestionesService.iso(g.aceptadaEn),
-      },
-      { idempotencyKey: `gest-${g.gestionRef}` },
-    );
-    const id = r?.id ?? r?.gestion?.id ?? r?.solicitud?.id;
+
+    const base: Record<string, unknown> = {
+      dpi: cliente.dpi,
+      producto,
+      monto_solicitado: MONTO_REFERENCIA[producto].toFixed(2),
+      nit: String(cliente.nit ?? '').replace(/[^0-9Kk]/g, '') || undefined,
+      tipo_empleo: cliente.tipoEmpleo === 'Independiente' ? 'Independiente' : 'Asalariado',
+      ingresos_mensuales_q: Number(cliente.ingresosMensuales),
+      antiguedad_laboral_meses: cliente.antiguedadLaboralMeses ?? 0,
+    };
+    let r: any;
+    try {
+      r = await this.cp.post('/banca/solicitudes', { ...base, gestion_ref: g.gestionRef }, { idempotencyKey: `gest-${g.gestionRef}` });
+    } catch (err: any) {
+      // Si CP no acepta nuestro número de gestión (formato), se reintenta sin él: CP asigna su propio folio
+      const campos = err?.getResponse?.()?.errors;
+      if (err?.getStatus?.() === 422 && campos && 'gestion_ref' in campos) {
+        r = await this.cp.post('/banca/solicitudes', base, { idempotencyKey: `gest2-${g.gestionRef}` });
+      } else {
+        throw err;
+      }
+    }
+    const id = r?.id ?? r?.solicitud?.id ?? r?.gestion?.id;
     return id !== undefined && id !== null ? String(id) : null;
   }
 }
