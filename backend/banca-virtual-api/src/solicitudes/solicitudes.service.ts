@@ -1,5 +1,7 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ClientesService } from '../clientes/clientes.service';
+import { CpGestionesService } from '../cp/cp-gestiones.service';
 import { CoreClient } from '../core/core.client';
 import { CoreEvaluacionRequest } from '../core/core.types';
 import { DatabaseService, PG_UNIQUE_VIOLATION } from '../database/database.service';
@@ -16,11 +18,15 @@ import {
 
 @Injectable()
 export class SolicitudesService {
+  private readonly logger = new Logger(SolicitudesService.name);
+
   constructor(
     private readonly db: DatabaseService,
     private readonly core: CoreClient,
     private readonly notificaciones: NotificacionesService,
     private readonly tarjetas: TarjetasService,
+    private readonly clientes: ClientesService,
+    private readonly cpGestiones: CpGestionesService,
     config: ConfigService,
   ) {
     const n = Number(config.get('EVALUACION_DEMORA_SEGUNDOS') ?? 60);
@@ -115,12 +121,32 @@ export class SolicitudesService {
         RETURNING ${SOLICITUD_COLS}`,
       [id, clienteId, aceptar ? 'ACEPTADA' : 'RECHAZADA_POR_CLIENTE'],
     );
-    if (s) return this.toView(s);
+    if (s) {
+      if (aceptar) await this.enviarACp(s); // mejor esfuerzo: nunca bloquea la aceptación
+      return this.toView(s);
+    }
 
     // No se actualizó nada: ¿no existe (o es ajena) o ya no admite decisión?
     const existe = await this.db.one('SELECT 1 FROM solicitudes WHERE id = $1 AND cliente_id = $2', [id, clienteId]);
     if (!existe) throw new NotFoundException('Solicitud no encontrada');
     throw new ConflictException('Esta solicitud ya no admite una decisión');
+  }
+
+  /** Registra la gestión aceptada en CP Gestiones; guarda el id que devuelva o el motivo del fallo. */
+  private async enviarACp(s: Solicitud) {
+    try {
+      const cliente = await this.clientes.obtener(s.clienteId);
+      const cpId = await this.cpGestiones.registrarGestion(cliente, {
+        gestionRef: s.id,
+        evaluacionRef: String(s.evaluacionId),
+        aceptadaEn: s.decisionClienteAt ?? new Date(),
+      });
+      await this.db.query('UPDATE solicitudes SET cp_gestion_id = $2, cp_error = NULL WHERE id = $1', [s.id, cpId]);
+    } catch (err: any) {
+      const msg = String(err?.response?.message ?? err?.message ?? 'Error desconocido').slice(0, 290);
+      this.logger.warn(`No se pudo registrar la gestión ${s.id} en CP Gestiones: ${msg}`);
+      await this.db.query('UPDATE solicitudes SET cp_error = $2 WHERE id = $1', [s.id, msg]).catch(() => undefined);
+    }
   }
 
   async listarDeCliente(clienteId: string) {

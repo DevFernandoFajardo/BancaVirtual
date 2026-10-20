@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module';
 import { BeneficiariosModule } from './beneficiarios/beneficiarios.module';
 import { ClientesModule } from './clientes/clientes.module';
 import { CuentasModule } from './cuentas/cuentas.module';
+import { CpModule } from './cp/cp.module';
 import { DatabaseModule } from './database/database.module';
 import { ExtrasModule } from './extras/extras.module';
 import { NotificacionesModule } from './notificaciones/notificaciones.module';
@@ -23,6 +24,7 @@ import { TransferenciasModule } from './transferencias/transferencias.module';
     ConfigModule.forRoot({ isGlobal: true }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     DatabaseModule,
+    CpModule,
     NotificacionesModule,
     AuthModule,
     ClientesModule,
