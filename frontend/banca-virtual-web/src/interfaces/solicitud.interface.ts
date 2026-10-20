@@ -51,6 +51,8 @@ export interface CrearSolicitudRequest {
   ingresosMensuales: number;
   tipoEmpleo: string;
   antiguedadLaboralMeses: number;
+  /** Solo créditos y tarjeta de crédito */
+  montoSolicitado?: number;
 }
 
 export interface ProductoCatalogo {

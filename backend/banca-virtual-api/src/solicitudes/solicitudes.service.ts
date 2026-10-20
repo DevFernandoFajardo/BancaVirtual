@@ -87,6 +87,12 @@ export class SolicitudesService {
           this.demoraSegundos,
         ],
       );
+      if (dto.montoSolicitado) {
+        // Columna agregada por database/04_cp_gestiones.sql; si aún no existe, la solicitud sigue igual
+        await this.db
+          .query('UPDATE solicitudes SET monto_solicitado = $2 WHERE id = $1', [s!.id, dto.montoSolicitado.toFixed(2)])
+          .catch(() => undefined);
+      }
       await this.liberarResultados(); // con demora 0 el resultado queda disponible al instante
       return this.toView((await this.db.one<Solicitud>(`SELECT ${SOLICITUD_COLS} FROM solicitudes WHERE id = $1`, [s!.id]))!);
     } catch (err: any) {
@@ -142,7 +148,8 @@ export class SolicitudesService {
   private async enviarACp(s: Solicitud) {
     try {
       const cliente = await this.clientes.obtener(s.clienteId);
-      const cpId = await this.cpGestiones.registrarGestion(cliente, { gestionRef: s.id, productoCodigo: s.productoCodigo });
+      const m = await this.db.one<{ monto: string | null }>('SELECT monto_solicitado::text AS monto FROM solicitudes WHERE id = $1', [s.id]).catch(() => null);
+      const cpId = await this.cpGestiones.registrarGestion(cliente, { gestionRef: s.id, productoCodigo: s.productoCodigo, monto: m?.monto ? Number(m.monto) : undefined });
       await this.db.query('UPDATE solicitudes SET cp_gestion_id = $2, cp_error = NULL WHERE id = $1', [s.id, cpId]);
     } catch (err: any) {
       const msg = String(err?.response?.message ?? err?.message ?? 'Error desconocido').slice(0, 290);

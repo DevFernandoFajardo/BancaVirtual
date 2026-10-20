@@ -29,6 +29,15 @@ const FORM_VACIO = {
   ingresosMensuales: '',
   tipoEmpleo: 'Asalariado',
   antiguedadLaboralMeses: '0',
+  montoSolicitado: '',
+};
+
+/** Productos que piden monto, con su rango (Q). La precalificación general no lleva monto. */
+const RANGO_MONTO: Record<string, { min: number; max: number; etiqueta: string }> = {
+  TARJETA_CREDITO: { min: 1_000, max: 50_000, etiqueta: 'Límite de crédito solicitado (Q)' },
+  CREDITO_PERSONAL: { min: 1_000, max: 300_000, etiqueta: 'Monto del préstamo (Q)' },
+  CREDITO_VEHICULAR: { min: 1_000, max: 600_000, etiqueta: 'Monto del préstamo (Q)' },
+  PRESTAMO_HIPOTECARIO: { min: 1_000, max: 3_000_000, etiqueta: 'Monto del préstamo (Q)' },
 };
 
 export default function ProductosPage() {
@@ -78,6 +87,9 @@ export default function ProductosPage() {
 
   const dpiOk = /^\d{13}$/.test(form.dpi);
   const nitOk = /^[0-9]{1,12}(-?[0-9Kk])?$/.test(form.nit);
+  const rango = seleccion ? RANGO_MONTO[seleccion] : undefined;
+  const montoNum = Number(form.montoSolicitado);
+  const montoOk = !rango || (form.montoSolicitado !== '' && montoNum >= rango.min && montoNum <= rango.max);
   const formOk =
     !!form.primerNombre.trim() &&
     !!form.primerApellido.trim() &&
@@ -86,7 +98,8 @@ export default function ProductosPage() {
     !!form.fechaNacimiento &&
     form.ingresosMensuales !== '' &&
     Number(form.ingresosMensuales) >= 0 &&
-    form.antiguedadLaboralMeses !== '';
+    form.antiguedadLaboralMeses !== '' &&
+    montoOk;
 
   async function enviar(codigo: string, e: React.FormEvent) {
     e.preventDefault();
@@ -104,8 +117,9 @@ export default function ProductosPage() {
         ingresosMensuales: Number(form.ingresosMensuales),
         tipoEmpleo: form.tipoEmpleo,
         antiguedadLaboralMeses: Number(form.antiguedadLaboralMeses),
+        ...(RANGO_MONTO[codigo] ? { montoSolicitado: Number(form.montoSolicitado) } : {}),
       });
-      setForm((f) => ({ ...f, dpi: '', nit: '' }));
+      setForm((f) => ({ ...f, dpi: '', nit: '', montoSolicitado: '' }));
       setSeleccion(null);
       setEnviada(true);
       await cargar();
@@ -234,6 +248,21 @@ export default function ProductosPage() {
                 onChange={set('antiguedadLaboralMeses')}
               />
             </div>
+            {rango && (
+              <Field
+                label={rango.etiqueta}
+                type="number"
+                inputMode="decimal"
+                min={rango.min}
+                max={rango.max}
+                step="100"
+                required
+                value={form.montoSolicitado}
+                onChange={set('montoSolicitado')}
+                hint={`Entre ${rango.min.toLocaleString('es-GT')} y ${rango.max.toLocaleString('es-GT')}`}
+                error={form.montoSolicitado !== '' && !montoOk ? 'Monto fuera del rango permitido' : undefined}
+              />
+            )}
             <Button type="submit" full loading={enviando} disabled={!formOk}>
               Enviar solicitud
             </Button>

@@ -96,6 +96,12 @@ export class CrearSolicitudDto {
   @Max(1200)
   antiguedadLaboralMeses: number;
 
+  /** Monto (o límite) que el cliente solicita; aplica a créditos y tarjeta de crédito */
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(1)
+  @Max(5_000_000)
+  montoSolicitado?: number;
 }
 
 export class DecisionDto {

@@ -6,3 +6,5 @@
 -- =====================================================================
 ALTER TABLE solicitudes ADD COLUMN IF NOT EXISTS cp_gestion_id varchar(80);
 ALTER TABLE solicitudes ADD COLUMN IF NOT EXISTS cp_error      varchar(300);
+-- Monto (o limite) que el cliente pide en la solicitud; se envia a CP Gestiones
+ALTER TABLE solicitudes ADD COLUMN IF NOT EXISTS monto_solicitado numeric(14,2);

@@ -8,6 +8,8 @@ export interface GestionParaCp {
   gestionRef: string;
   /** Código del producto en BancaVirtual/CreditPulse, p. ej. TARJETA_CREDITO */
   productoCodigo: string;
+  /** Monto que pidió el cliente; si falta (solicitudes antiguas) se usa uno de referencia */
+  monto?: number;
 }
 
 /** Códigos de producto de BancaVirtual -> códigos de CP Gestiones. "GENERAL" (precalificación) no es un producto. */
@@ -81,7 +83,7 @@ export class CpGestionesService {
     const base: Record<string, unknown> = {
       dpi: cliente.dpi,
       producto,
-      monto_solicitado: MONTO_REFERENCIA[producto].toFixed(2),
+      monto_solicitado: (g.monto ?? MONTO_REFERENCIA[producto]).toFixed(2),
       nit: String(cliente.nit ?? '').replace(/[^0-9Kk]/g, '') || undefined,
       tipo_empleo: cliente.tipoEmpleo === 'Independiente' ? 'Independiente' : 'Asalariado',
       ingresos_mensuales_q: Number(cliente.ingresosMensuales),
