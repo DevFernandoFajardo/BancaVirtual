@@ -4,6 +4,7 @@ import { AuthUser } from '../auth/auth.schema';
 import { decrypt, encrypt } from '../common/crypto.util';
 import { generarSecretoTotp, otpauthUrl, verificarTotp } from '../common/totp.util';
 import { DatabaseService } from '../database/database.service';
+import { CpAuthService } from '../cp/cp-auth.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 
 @Injectable()
@@ -11,6 +12,7 @@ export class SeguridadService {
   constructor(
     private readonly db: DatabaseService,
     private readonly notificaciones: NotificacionesService,
+    private readonly cpAuth: CpAuthService,
   ) {}
 
   async estado(clienteId: string) {
@@ -25,10 +27,22 @@ export class SeguridadService {
   }
 
   async cambiarPassword(user: AuthUser, passwordActual: string, passwordNueva: string) {
-    const c = await this.db.one<{ hash: string }>('SELECT password_hash AS hash FROM clientes WHERE id = $1', [user.sub]);
+    const c = await this.db.one<{ hash: string; email: string; rol: string }>('SELECT password_hash AS hash, email, rol FROM clientes WHERE id = $1', [user.sub]);
     if (!c) throw new NotFoundException('Cliente no encontrado');
-    if (!(await bcrypt.compare(passwordActual, c.hash))) throw new UnauthorizedException('La contraseña actual es incorrecta');
     if (passwordActual === passwordNueva) throw new BadRequestException('La contraseña nueva debe ser distinta de la actual');
+    if (c.rol === 'ADMIN') {
+      if (!(await bcrypt.compare(passwordActual, c.hash))) throw new UnauthorizedException('La contraseña actual es incorrecta');
+    } else {
+      // La contraseña vive en CP Gestiones: él valida la actual y aplica sus reglas a la nueva
+      try {
+        await this.cpAuth.cambiarPassword(c.email, passwordActual, passwordNueva);
+      } catch (err: any) {
+        if (CpAuthService.codigoDe(err) === 'INVALID_CREDENTIALS' || err?.getStatus?.() === 422) {
+          if (CpAuthService.codigoDe(err) === 'INVALID_CREDENTIALS') throw new UnauthorizedException('La contraseña actual es incorrecta');
+        }
+        throw err;
+      }
+    }
 
     await this.db.query('UPDATE clientes SET password_hash = $2, updated_at = now() WHERE id = $1', [
       user.sub,
@@ -70,11 +84,17 @@ export class SeguridadService {
       [clienteId],
     );
     if (!c?.activo || !c.secreto) throw new BadRequestException('La verificación en dos pasos no está activa');
-    if (!(await bcrypt.compare(password, c.hash))) throw new UnauthorizedException('La contraseña es incorrecta');
+    if (!(await this.passwordCorrecta(clienteId, password, c.hash))) throw new UnauthorizedException('La contraseña es incorrecta');
     if (!verificarTotp(decrypt(c.secreto), codigo)) throw new BadRequestException('El código no es correcto');
     await this.db.query('UPDATE clientes SET totp_activo = false, totp_secreto_cifrado = NULL WHERE id = $1', [clienteId]);
     await this.notificaciones.crear(clienteId, 'SEGURIDAD', 'Verificación en dos pasos desactivada', 'Ya no se pedirá un código al iniciar sesión.', '/seguridad');
     return { dosFactoresActivo: false };
+  }
+
+  private async passwordCorrecta(clienteId: string, password: string, hash: string): Promise<boolean> {
+    const c = await this.db.one<{ email: string; rol: string }>('SELECT email, rol FROM clientes WHERE id = $1', [clienteId]);
+    if (!c || c.rol === 'ADMIN') return bcrypt.compare(password, hash);
+    return this.cpAuth.verificarPassword(c.email, password);
   }
 
   // ------------------------------------------------------------- sesiones
