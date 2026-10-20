@@ -53,6 +53,12 @@ export class CpGestionesService {
     }
   }
 
+  /** Fecha ISO 8601 en hora de Guatemala (UTC-6, sin horario de verano), sin milisegundos: 2026-10-07T11:30:00-06:00 */
+  private static iso(d: Date): string {
+    const g = new Date(d.getTime() - 6 * 3600 * 1000);
+    return g.toISOString().replace(/\.\d{3}Z$/, '-06:00');
+  }
+
   /** Devuelve el id de la gestión creada en CP Gestiones (si lo informa). */
   async registrarGestion(cliente: Cliente, g: GestionParaCp): Promise<string | null> {
     await this.asegurarCliente(cliente);
@@ -63,7 +69,7 @@ export class CpGestionesService {
         gestion_ref: g.gestionRef,
         evaluacion_ref: g.evaluacionRef,
         referencia_aceptacion: `consent-${g.gestionRef}`,
-        aceptada_en: g.aceptadaEn.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+        aceptada_en: CpGestionesService.iso(g.aceptadaEn),
       },
       { idempotencyKey: `gest-${g.gestionRef}` },
     );
