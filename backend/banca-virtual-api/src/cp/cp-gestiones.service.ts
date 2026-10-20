@@ -62,7 +62,7 @@ export class CpGestionesService {
           dpi: c.dpi,
           fecha_nacimiento: String(c.fechaNacimiento).slice(0, 10),
         },
-        { idempotencyKey: `reg-${c.id}` },
+        {},
       );
     } catch (err: any) {
       // CUSTOMER_EXISTS: ya tiene perfil en CP, se sigue. CUSTOMER_LINK_REJECTED y demás errores sí se informan.
@@ -89,12 +89,12 @@ export class CpGestionesService {
     };
     let r: any;
     try {
-      r = await this.cp.post('/banca/solicitudes', { ...base, gestion_ref: g.gestionRef }, { idempotencyKey: `gest-${g.gestionRef}` });
+      r = await this.cp.post('/banca/solicitudes', { ...base, gestion_ref: g.gestionRef }, {});
     } catch (err: any) {
       // Si CP no acepta nuestro número de gestión (formato), se reintenta sin él: CP asigna su propio folio
       const campos = err?.getResponse?.()?.errors;
       if (err?.getStatus?.() === 422 && campos && 'gestion_ref' in campos) {
-        r = await this.cp.post('/banca/solicitudes', base, { idempotencyKey: `gest2-${g.gestionRef}` });
+        r = await this.cp.post('/banca/solicitudes', base, {});
       } else {
         throw err;
       }

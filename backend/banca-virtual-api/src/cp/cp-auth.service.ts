@@ -30,7 +30,7 @@ export class CpAuthService {
   }
 
   /** Crea el perfil de acceso (contrato v2). Si el DPI ya existe en el banco, CP lo vincula (mismo DPI, correo y fecha). */
-  registrar(p: CpPerfil, claveIdem: string) {
+  registrar(p: CpPerfil) {
     return this.cp.post(
       '/banca/registro',
       {
@@ -41,7 +41,7 @@ export class CpAuthService {
         dpi: p.dpi,
         fecha_nacimiento: p.fechaNacimiento.slice(0, 10),
       },
-      { idempotencyKey: claveIdem },
+      {},
     );
   }
 

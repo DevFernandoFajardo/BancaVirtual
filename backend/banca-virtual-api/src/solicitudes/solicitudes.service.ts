@@ -151,7 +151,33 @@ export class SolicitudesService {
     }
   }
 
+  private reenviando = new Set<string>();
+
+  /** Reenvía a CP las gestiones aceptadas que aún no llegaron (p. ej. CP estaba caído). No bloquea la respuesta. */
+  private reintentarPendientesCp(clienteId: string) {
+    void (async () => {
+      try {
+        const rows = await this.db.rows<Solicitud>(
+          `SELECT ${SOLICITUD_COLS} FROM solicitudes WHERE cliente_id = $1 AND estado IN ('ACEPTADA', 'EMITIDA') AND cp_gestion_id IS NULL`,
+          [clienteId],
+        );
+        for (const s of rows) {
+          if (this.reenviando.has(s.id)) continue;
+          this.reenviando.add(s.id);
+          try {
+            await this.enviarACp(s);
+          } finally {
+            this.reenviando.delete(s.id);
+          }
+        }
+      } catch {
+        /* la columna cp_gestion_id puede no existir todavía: se ignora */
+      }
+    })();
+  }
+
   async listarDeCliente(clienteId: string) {
+    this.reintentarPendientesCp(clienteId);
     await this.liberarResultados();
     const rows = await this.db.rows<Solicitud>(
       `SELECT ${SOLICITUD_COLS} FROM solicitudes WHERE cliente_id = $1 ORDER BY created_at DESC`,

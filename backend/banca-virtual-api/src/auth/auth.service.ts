@@ -84,7 +84,6 @@ export class AuthService implements OnModuleInit {
             dpi: dto.dpi,
             fechaNacimiento: dto.fechaNacimiento,
           },
-          `reg-${nuevo.id}`,
         );
         return nuevo;
       });
@@ -156,7 +155,6 @@ export class AuthService implements OnModuleInit {
       try {
         await this.cpAuth.registrar(
           { nombre: local.primerNombre, apellido: local.primerApellido, correo: email, password: dto.password, dpi: local.dpi!, fechaNacimiento: local.fechaNacimiento! },
-          `mig-${local.id}`,
         );
       } catch (e: any) {
         // Ya tiene perfil en CP con otra contraseña (o datos que no coinciden): vale la contraseña de CP
