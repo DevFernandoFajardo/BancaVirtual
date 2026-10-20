@@ -10,3 +10,5 @@ ALTER TABLE solicitudes ADD COLUMN IF NOT EXISTS cp_error      varchar(300);
 ALTER TABLE solicitudes ADD COLUMN IF NOT EXISTS monto_solicitado numeric(14,2);
 -- Ultimo estado que reporto CP Gestiones para la gestion (para seguimiento)
 ALTER TABLE solicitudes ADD COLUMN IF NOT EXISTS cp_estado varchar(30);
+-- Vinculo de la tarjeta local con la tarjeta emitida en CP Gestiones (para reflejar bloqueos y saldos)
+ALTER TABLE tarjetas ADD COLUMN IF NOT EXISTS cp_tarjeta_id varchar(80);

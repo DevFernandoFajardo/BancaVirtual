@@ -56,6 +56,15 @@ export default function TarjetasPage() {
     cargarDetalle(sel);
   }, [sel, cargarDetalle]);
 
+  // Refleja cambios hechos por el banco (bloqueo, límite, saldo) sin recargar la página
+  useEffect(() => {
+    const t = setInterval(() => {
+      cargar();
+      cargarDetalle(sel);
+    }, 20000);
+    return () => clearInterval(t);
+  }, [cargar, cargarDetalle, sel]);
+
   async function ejecutar(fn: () => Promise<unknown>, mensaje: string) {
     setError('');
     setOk('');

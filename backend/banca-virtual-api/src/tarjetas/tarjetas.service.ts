@@ -1,4 +1,5 @@
 import {
+  Logger,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -7,6 +8,8 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'crypto';
+import { ClientesService } from '../clientes/clientes.service';
+import { CpClient } from '../cp/cp.client';
 import { fromCents, toCents } from '../common/money.util';
 import { CUENTA_COLS, Cuenta } from '../cuentas/cuentas.schema';
 import { DatabaseService } from '../database/database.service';
@@ -19,9 +22,82 @@ export class TarjetasService {
     private readonly db: DatabaseService,
     private readonly notificaciones: NotificacionesService,
     private readonly config: ConfigService,
+    private readonly cp: CpClient,
+    private readonly clientes: ClientesService,
   ) {}
 
-  listar(clienteId: string) {
+  private readonly logger = new Logger(TarjetasService.name);
+  private ultimaSync = new Map<string, number>();
+
+  /**
+   * Las tarjetas emitidas por el banco viven en CP Gestiones: si el personal la bloquea, cambia el límite o hay saldo,
+   * se refleja aquí. Se vincula por la gestión (solicitud) que la originó. Mejor esfuerzo: si CP no responde, se muestra lo local.
+   */
+  private async sincronizarConCp(clienteId: string) {
+    if (Date.now() - (this.ultimaSync.get(clienteId) ?? 0) < 8_000) return;
+    this.ultimaSync.set(clienteId, Date.now());
+    try {
+      const rows = await this.db.rows<{ id: string; cpId: string | null; gestionId: string | null }>(
+        `SELECT t.id, t.cp_tarjeta_id AS "cpId", s.cp_gestion_id AS "gestionId"
+           FROM tarjetas t LEFT JOIN solicitudes s ON s.id = t.solicitud_id WHERE t.cliente_id = $1`,
+        [clienteId],
+      );
+      if (!rows.length) return;
+      const cliente = await this.clientes.obtener(clienteId);
+      if (!cliente.dpi) return;
+
+      // 1) Vincular con la tarjeta de CP: la gestión emitida trae el id de la tarjeta
+      for (const r of rows) {
+        if (r.cpId || !r.gestionId) continue;
+        const g = await this.cp.get<any>(`/solicitudes/${encodeURIComponent(r.gestionId)}`, { params: { dpi: cliente.dpi } });
+        const sol = g?.solicitud ?? g;
+        if (sol?.tarjeta_id) {
+          r.cpId = String(sol.tarjeta_id);
+          await this.db.query('UPDATE tarjetas SET cp_tarjeta_id = $2 WHERE id = $1', [r.id, r.cpId]);
+        }
+      }
+      const vinculadas = rows.filter((r) => r.cpId);
+      if (!vinculadas.length) return;
+
+      // 2) Traer el estado real de las tarjetas de CP y reflejarlo
+      const lista = await this.cp.get<any>('/tarjetas', { params: { dpi: cliente.dpi } });
+      const tarjetasCp: any[] = Array.isArray(lista?.data) ? lista.data : Array.isArray(lista) ? lista : [];
+      for (const r of vinculadas) {
+        const c = tarjetasCp.find((x) => [x.id, x._id, x.tarjeta_id, x.referencia].some((v) => v !== undefined && String(v) === r.cpId));
+        if (!c) continue;
+        const estado = String(c.estado ?? 'activa').toLowerCase().startsWith('activ') ? 'ACTIVA' : 'BLOQUEADA';
+        const limite = c.limite_centavos !== undefined ? Number(c.limite_centavos) / 100 : null;
+        const usado = c.principal_centavos !== undefined ? (Number(c.principal_centavos) + Number(c.interes_centavos ?? 0)) / 100 : null;
+        const antes = await this.db.one<{ estado: string }>('SELECT estado FROM tarjetas WHERE id = $1', [r.id]);
+        await this.db.query(
+          `UPDATE tarjetas SET estado = $2, ultimos4 = COALESCE($3, ultimos4),
+                  limite = COALESCE($4::numeric, limite), saldo_utilizado = COALESCE($5::numeric, saldo_utilizado)
+            WHERE id = $1`,
+          [r.id, estado, c.ultimos_cuatro ? String(c.ultimos_cuatro) : null, limite, usado],
+        );
+        if (antes && antes.estado !== estado) {
+          await this.notificaciones.crear(
+            clienteId,
+            'TARJETA',
+            estado === 'BLOQUEADA' ? 'Tu tarjeta fue bloqueada' : 'Tu tarjeta fue activada',
+            `El banco ${estado === 'BLOQUEADA' ? 'bloqueó' : 'activó'} tu tarjeta${c.ultimos_cuatro ? ` terminada en ${c.ultimos_cuatro}` : ''}.`,
+            '/tarjetas',
+          );
+        }
+      }
+    } catch (err: any) {
+      // incluye "columna cp_tarjeta_id inexistente" si aún no se corrió 04_cp_gestiones.sql
+      this.logger.warn(`No se pudo sincronizar tarjetas con CP Gestiones: ${err?.message}`);
+    }
+  }
+
+  /** Espera la sincronización como máximo unos segundos para no trabar la pantalla si CP está dormido. */
+  private async sincronizarRapido(clienteId: string) {
+    await Promise.race([this.sincronizarConCp(clienteId), new Promise((r) => setTimeout(r, 4000))]);
+  }
+
+  async listar(clienteId: string) {
+    await this.sincronizarRapido(clienteId);
     return this.db.rows<Tarjeta>(`SELECT ${TARJETA_COLS} FROM tarjetas WHERE cliente_id = $1 ORDER BY created_at`, [clienteId]);
   }
 
@@ -32,6 +108,7 @@ export class TarjetasService {
   }
 
   async detalle(clienteId: string, id: string) {
+    await this.sincronizarRapido(clienteId);
     const tarjeta = await this.obtener(clienteId, id);
     const movimientos = await this.db.rows(
       `SELECT id, tipo, monto::float8 AS monto, descripcion, created_at AS fecha
@@ -41,10 +118,28 @@ export class TarjetasService {
     return { ...tarjeta, movimientos };
   }
 
+  /** Si la tarjeta también existe en CP Gestiones, el bloqueo hecho aquí se aplica allá (mejor esfuerzo). */
+  private async empujarEstadoACp(clienteId: string, id: string, bloquear: boolean) {
+    try {
+      const r = await this.db.one<{ cpId: string | null }>('SELECT cp_tarjeta_id AS "cpId" FROM tarjetas WHERE id = $1', [id]);
+      if (!r?.cpId) return;
+      const cliente = await this.clientes.obtener(clienteId);
+      if (!cliente.dpi) return;
+      await this.cp.patch(`/tarjetas/${encodeURIComponent(r.cpId)}/estado`, {
+        dpi: cliente.dpi,
+        estado: bloquear ? 'bloqueada' : 'activa',
+        nota: bloquear ? 'Bloqueo solicitado por el cliente en Banca Virtual' : 'Desbloqueo solicitado por el cliente en Banca Virtual',
+      });
+    } catch (err: any) {
+      this.logger.warn(`No se pudo aplicar el estado de la tarjeta en CP Gestiones: ${err?.message}`);
+    }
+  }
+
   async bloquear(clienteId: string, id: string, bloquear: boolean) {
     await this.obtener(clienteId, id);
     await this.db.query(`UPDATE tarjetas SET estado = $2 WHERE id = $1`, [id, bloquear ? 'BLOQUEADA' : 'ACTIVA']);
     const t = await this.obtener(clienteId, id);
+    await this.empujarEstadoACp(clienteId, id, bloquear);
     await this.notificaciones.crear(
       clienteId,
       'TARJETA',
