@@ -57,6 +57,14 @@ export default function GestionesPage() {
     };
   }, [hayEnEvaluacion, cargar]);
 
+  // Aceptada y en trámite: se consulta cada 15 s para reflejar cuando el banco la completa
+  const hayEnTramite = !!gestiones?.some((g) => g.estado === 'ACEPTADA');
+  useEffect(() => {
+    if (!hayEnTramite) return;
+    const poll = setInterval(cargar, 15000);
+    return () => clearInterval(poll);
+  }, [hayEnTramite, cargar]);
+
   async function decidir(g: Solicitud, aceptar: boolean) {
     setError('');
     setAviso('');

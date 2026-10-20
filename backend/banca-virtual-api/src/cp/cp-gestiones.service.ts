@@ -104,4 +104,22 @@ export class CpGestionesService {
     const id = r?.id ?? r?.solicitud?.id ?? r?.gestion?.id;
     return id !== undefined && id !== null ? String(id) : null;
   }
+
+  /** Estado actual de una gestión en CP Gestiones (en minúsculas: en_evaluacion, aprobada, aceptada, en_tramite, emitida, cancelada…). */
+  async consultar(cpId: string, dpi: string): Promise<{ estado: string; version: number }> {
+    const r = await this.cp.get<any>(`/solicitudes/${encodeURIComponent(cpId)}`, { params: { dpi } });
+    const sol = r?.solicitud ?? r;
+    return { estado: String(sol?.estado ?? '').toLowerCase(), version: Number(sol?.version ?? 1) };
+  }
+
+  /** El cliente ya aceptó la oferta en BancaVirtual: se registra la aceptación en CP cuando la gestión está "aprobada". */
+  async registrarAceptacion(cpId: string, dpi: string, version: number, gestionRef: string): Promise<void> {
+    await this.cp.post(`/solicitudes/${encodeURIComponent(cpId)}/transiciones`, {
+      dpi,
+      version,
+      estado: 'aceptada',
+      nota: 'Aceptada por el cliente en Banca Virtual',
+      referencia_aceptacion: `consent-${gestionRef}`,
+    });
+  }
 }

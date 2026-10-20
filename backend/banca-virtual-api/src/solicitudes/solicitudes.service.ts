@@ -183,7 +183,66 @@ export class SolicitudesService {
     })();
   }
 
+  private ultimaSync = new Map<string, number>();
+
+  /**
+   * Trae de CP Gestiones el avance de las gestiones aceptadas: cuando el banco la completa (emitida) o la cancela,
+   * se refleja aquí. Corre en segundo plano (máx. cada 10 s por gestión) y el resultado se ve en la siguiente consulta.
+   */
+  private sincronizarConCp(clienteId: string) {
+    void (async () => {
+      try {
+        const rows = await this.db.rows<{ id: string; cpId: string; codigo: string; nombre: string | null }>(
+          `SELECT id, cp_gestion_id AS "cpId", producto_codigo AS codigo, producto_nombre AS nombre
+             FROM solicitudes WHERE cliente_id = $1 AND estado = 'ACEPTADA' AND cp_gestion_id IS NOT NULL`,
+          [clienteId],
+        );
+        for (const r of rows) {
+          if (Date.now() - (this.ultimaSync.get(r.id) ?? 0) < 10_000) continue;
+          this.ultimaSync.set(r.id, Date.now());
+          try {
+            await this.sincronizarUna(clienteId, r);
+          } catch (err: any) {
+            this.logger.warn(`No se pudo consultar la gestión ${r.id} en CP Gestiones: ${err?.message}`);
+          }
+        }
+      } catch {
+        /* columnas de CP todavía sin crear: se ignora */
+      }
+    })();
+  }
+
+  private async sincronizarUna(clienteId: string, r: { id: string; cpId: string; codigo: string; nombre: string | null }) {
+    const cliente = await this.clientes.obtener(clienteId);
+    if (!cliente.dpi) return;
+    let cp = await this.cpGestiones.consultar(r.cpId, cliente.dpi);
+    if (cp.estado === 'aprobada') {
+      // El cliente ya aceptó aquí: se registra la aceptación en CP para que el banco continúe el trámite
+      await this.cpGestiones.registrarAceptacion(r.cpId, cliente.dpi, cp.version, r.id);
+      cp = await this.cpGestiones.consultar(r.cpId, cliente.dpi);
+    }
+    await this.db.query('UPDATE solicitudes SET cp_estado = $2 WHERE id = $1', [r.id, cp.estado]).catch(() => undefined);
+
+    const nuevo = cp.estado === 'emitida' ? 'EMITIDA' : cp.estado === 'cancelada' || cp.estado === 'rechazada' ? 'CANCELADA' : null;
+    if (!nuevo) return;
+    const s = await this.db.one<Solicitud>(
+      `UPDATE solicitudes SET estado = $2, nota_admin = COALESCE(nota_admin, $3), updated_at = now()
+        WHERE id = $1 AND estado = 'ACEPTADA' RETURNING ${SOLICITUD_COLS}`,
+      [r.id, nuevo, nuevo === 'EMITIDA' ? 'Completada por el banco en CP Gestiones' : 'Cancelada por el banco en CP Gestiones'],
+    );
+    if (!s) return;
+    if (nuevo === 'EMITIDA' && s.productoCodigo === 'TARJETA_CREDITO') await this.tarjetas.emitirDesdeSolicitud(s.id);
+    await this.notificaciones.crear(
+      s.clienteId,
+      'GESTION',
+      nuevo === 'EMITIDA' ? 'Tu gestión fue completada' : 'Tu gestión fue cancelada',
+      `${s.productoNombre ?? 'Tu solicitud'}: ${nuevo === 'EMITIDA' ? 'el banco completó el trámite.' : 'el banco canceló el trámite.'}`,
+      '/gestiones',
+    );
+  }
+
   async listarDeCliente(clienteId: string) {
+    this.sincronizarConCp(clienteId);
     this.reintentarPendientesCp(clienteId);
     await this.liberarResultados();
     const rows = await this.db.rows<Solicitud>(
@@ -194,6 +253,7 @@ export class SolicitudesService {
   }
 
   async verDeCliente(clienteId: string, id: string) {
+    this.sincronizarConCp(clienteId);
     await this.liberarResultados();
     const s = await this.db.one<Solicitud>(`SELECT ${SOLICITUD_COLS} FROM solicitudes WHERE id = $1 AND cliente_id = $2`, [
       id,
