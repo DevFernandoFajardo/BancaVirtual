@@ -13,7 +13,8 @@ import { PRODUCTOS } from '@/lib/productos';
 import { perfilService } from '@/services/perfil/perfil.service';
 import { solicitudesService } from '@/services/solicitudes/solicitudes.service';
 
-const VIGENTES = ['EN_EVALUACION', 'PENDIENTE_DECISION_CLIENTE', 'ACEPTADA', 'EMITIDA'];
+// Gestión en curso del mismo producto: bloquea otra igual. Con la gestión completada (EMITIDA) se puede pedir de nuevo.
+const VIGENTES = ['EN_EVALUACION', 'PENDIENTE_DECISION_CLIENTE', 'ACEPTADA'];
 
 const EMPLEOS = [
   { value: 'Asalariado', label: 'Asalariado' },
@@ -30,13 +31,14 @@ const FORM_VACIO = {
   tipoEmpleo: 'Asalariado',
   antiguedadLaboralMeses: '0',
   montoSolicitado: '',
+  plazoMeses: '',
 };
 
 /** Préstamos que piden monto, con su rango (Q). La tarjeta de crédito no: el banco asigna el límite según tu perfil. */
-const RANGO_MONTO: Record<string, { min: number; max: number; etiqueta: string }> = {
-  CREDITO_PERSONAL: { min: 1_000, max: 300_000, etiqueta: 'Monto del préstamo (Q)' },
-  CREDITO_VEHICULAR: { min: 1_000, max: 600_000, etiqueta: 'Monto del préstamo (Q)' },
-  PRESTAMO_HIPOTECARIO: { min: 1_000, max: 3_000_000, etiqueta: 'Monto del préstamo (Q)' },
+const RANGO_MONTO: Record<string, { min: number; max: number; etiqueta: string; plazoMax: number; plazoDef: number }> = {
+  CREDITO_PERSONAL: { min: 1_000, max: 300_000, etiqueta: 'Monto del préstamo (Q)', plazoMax: 60, plazoDef: 36 },
+  CREDITO_VEHICULAR: { min: 1_000, max: 600_000, etiqueta: 'Monto del préstamo (Q)', plazoMax: 84, plazoDef: 60 },
+  PRESTAMO_HIPOTECARIO: { min: 1_000, max: 3_000_000, etiqueta: 'Monto del préstamo (Q)', plazoMax: 300, plazoDef: 240 },
 };
 
 export default function ProductosPage() {
@@ -100,6 +102,8 @@ export default function ProductosPage() {
 
   const rango = seleccion ? RANGO_MONTO[seleccion] : undefined;
   const montoNum = Number(form.montoSolicitado);
+  const plazoNum = Number(form.plazoMeses);
+  const plazoOk = !rango || (form.plazoMeses !== '' && Number.isInteger(plazoNum) && plazoNum >= 6 && plazoNum <= rango.plazoMax);
   const montoOk = !rango || (form.montoSolicitado !== '' && montoNum >= rango.min && montoNum <= rango.max);
   const formOk =
     !!form.primerNombre.trim() &&
@@ -110,7 +114,8 @@ export default function ProductosPage() {
     form.ingresosMensuales !== '' &&
     Number(form.ingresosMensuales) >= 0 &&
     form.antiguedadLaboralMeses !== '' &&
-    montoOk;
+    montoOk &&
+    plazoOk;
 
   async function enviar(codigo: string, e: React.FormEvent) {
     e.preventDefault();
@@ -128,9 +133,9 @@ export default function ProductosPage() {
         ingresosMensuales: Number(form.ingresosMensuales),
         tipoEmpleo: form.tipoEmpleo,
         antiguedadLaboralMeses: Number(form.antiguedadLaboralMeses),
-        ...(RANGO_MONTO[codigo] ? { montoSolicitado: Number(form.montoSolicitado) } : {}),
+        ...(RANGO_MONTO[codigo] ? { montoSolicitado: Number(form.montoSolicitado), plazoMeses: Number(form.plazoMeses) } : {}),
       });
-      setForm((f) => ({ ...f, dpi: '', nit: '', montoSolicitado: '' }));
+      setForm((f) => ({ ...f, dpi: '', nit: '', montoSolicitado: '', plazoMeses: '' }));
       setSeleccion(null);
       setEnviada(true);
       await cargar();
@@ -249,6 +254,21 @@ export default function ProductosPage() {
                 onChange={set('montoSolicitado')}
                 hint={`Entre ${rango.min.toLocaleString('es-GT')} y ${rango.max.toLocaleString('es-GT')}`}
                 error={form.montoSolicitado !== '' && !montoOk ? 'Monto fuera del rango permitido' : undefined}
+              />
+            )}
+            {rango && (
+              <Field
+                label="Plazo: número de cuotas (meses)"
+                type="number"
+                inputMode="numeric"
+                min={6}
+                max={rango.plazoMax}
+                step="1"
+                required
+                value={form.plazoMeses}
+                onChange={set('plazoMeses')}
+                hint={`Entre 6 y ${rango.plazoMax} cuotas mensuales. El banco confirma las cuotas al aprobar.`}
+                error={form.plazoMeses !== '' && !plazoOk ? `Elige entre 6 y ${rango.plazoMax} cuotas` : undefined}
               />
             )}
             <div className="grid gap-4 sm:grid-cols-2">

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Field, SelectField } from '@/components/ui/Field';
 import { PageLoader } from '@/components/ui/Spinner';
-import type { ComprobantePago, PagoServicio, Servicio } from '@/interfaces/banca.interface';
+import type { ComprobantePago, ConsultaServicio, ModoServicios, PagoServicio, Servicio } from '@/interfaces/banca.interface';
 import type { Cuenta } from '@/interfaces/cuenta.interface';
 import { errorMessage } from '@/lib/api';
 import { TIPO_CUENTA_LABEL, formatCuenta, formatDate, formatMoney } from '@/lib/format';
@@ -29,6 +29,9 @@ export default function ServiciosPage() {
   const [pagando, setPagando] = useState(false);
   const [recibo, setRecibo] = useState<ComprobantePago | null>(null);
   const [bajando, setBajando] = useState(false);
+  const [modo, setModo] = useState<ModoServicios | null>(null);
+  const [consulta, setConsulta] = useState<ConsultaServicio | null>(null);
+  const [consultando, setConsultando] = useState(false);
 
   const cargar = useCallback(async () => {
     try {
@@ -45,7 +48,24 @@ export default function ServiciosPage() {
 
   useEffect(() => {
     cargar();
+    serviciosService.modo().then(setModo).catch(() => {});
   }, [cargar]);
+
+  async function consultar() {
+    if (!seleccion) return;
+    setError('');
+    setConsultando(true);
+    try {
+      const c = await serviciosService.consultar(seleccion.codigo, contrato.trim());
+      setConsulta(c);
+      if (c.montoAdeudado) setMonto(String(c.montoAdeudado));
+      else if (!c.disponible) setError('Este proveedor no ofrece consulta de saldo: escribe el monto a pagar.');
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setConsultando(false);
+    }
+  }
 
   const categorias = useMemo(() => {
     const m = new Map<string, Servicio[]>();
@@ -65,6 +85,7 @@ export default function ServiciosPage() {
     try {
       setRecibo(await serviciosService.pagar({ servicioCodigo: seleccion.codigo, contrato: contrato.trim(), monto: montoNum, cuentaId }));
       setSeleccion(null);
+      setConsulta(null);
       setContrato('');
       setMonto('');
       await cargar();
@@ -93,6 +114,8 @@ export default function ServiciosPage() {
           </div>
           <dl className="space-y-2 text-sm">
             <Fila k="Referencia" v={recibo.referencia} />
+            {recibo.autorizacion && <Fila k="Autorización" v={recibo.autorizacion} />}
+            {recibo.proveedor && <Fila k="Procesado por" v={recibo.proveedor} />}
             <Fila k="Contrato" v={recibo.contrato} />
             <Fila k="Fecha" v={formatDate(recibo.fecha)} />
             <Fila k="Saldo de tu cuenta" v={formatMoney(recibo.saldoDespues)} />
@@ -122,6 +145,12 @@ export default function ServiciosPage() {
 
       {!recibo && !seleccion && (
         <section className="space-y-5">
+          {modo && (
+            <p className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${modo.externo ? 'border-verde/40 text-verde' : 'border-line text-muted'}`}>
+              <span className={`h-2 w-2 rounded-full ${modo.externo ? 'bg-verde' : 'bg-muted'}`} aria-hidden="true" />
+              {modo.externo ? `Pagos en línea con ${modo.proveedor}` : 'Modo de demostración (pagos simulados)'}
+            </p>
+          )}
           {cuentas.length === 0 && <Alert tone="info">Necesitas una cuenta activa para pagar servicios.</Alert>}
           {categorias.map(([cat, items]) => (
             <div key={cat}>
@@ -156,12 +185,26 @@ export default function ServiciosPage() {
               <p className="text-xs font-semibold uppercase tracking-wide text-muted">Pagar servicio</p>
               <h2 className="text-lg font-semibold">{seleccion.nombre}</h2>
             </div>
-            <button onClick={() => setSeleccion(null)} className="text-sm text-muted hover:text-ink">
+            <button onClick={() => { setSeleccion(null); setConsulta(null); }} className="text-sm text-muted hover:text-ink">
               ← Cambiar
             </button>
           </div>
           <form onSubmit={pagar} className="space-y-4" noValidate>
-            <Field label={seleccion.referenciaEtiqueta} required maxLength={40} value={contrato} onChange={(e) => setContrato(e.target.value)} hint="Solo letras, números y guiones (mínimo 4)" />
+            <Field label={seleccion.referenciaEtiqueta} required maxLength={40} value={contrato} onChange={(e) => { setContrato(e.target.value); setConsulta(null); }} hint="Solo letras, números y guiones (mínimo 4)" />
+            {modo?.externo && (
+              <div>
+                <Button type="button" variant="secondary" loading={consultando} disabled={contrato.trim().length < 4 || !/^[A-Za-z0-9\-_.]+$/.test(contrato.trim())} onClick={consultar}>
+                  Consultar monto a pagar
+                </Button>
+                {consulta?.disponible && (
+                  <p className="mt-2 rounded-xl bg-input/80 px-3 py-2 text-sm">
+                    {consulta.titular && <span className="block font-semibold">{consulta.titular}</span>}
+                    {consulta.montoAdeudado ? <span>Monto adeudado: <b>{formatMoney(consulta.montoAdeudado)}</b></span> : <span className="text-muted">Sin saldo pendiente informado.</span>}
+                    {consulta.detalle && <span className="block text-xs text-muted">{consulta.detalle}</span>}
+                  </p>
+                )}
+              </div>
+            )}
             <Field
               label="Monto a pagar (Q)"
               type="number"

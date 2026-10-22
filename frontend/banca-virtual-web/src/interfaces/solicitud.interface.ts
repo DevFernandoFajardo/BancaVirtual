@@ -53,6 +53,8 @@ export interface CrearSolicitudRequest {
   antiguedadLaboralMeses: number;
   /** Solo créditos y tarjeta de crédito */
   montoSolicitado?: number;
+  /** Plazo deseado en meses = número de cuotas (solo préstamos) */
+  plazoMeses?: number;
 }
 
 export interface ProductoCatalogo {

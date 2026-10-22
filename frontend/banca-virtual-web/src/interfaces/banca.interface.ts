@@ -72,6 +72,9 @@ export interface ComprobantePago {
   cuentaOrigen: string;
   saldoDespues: number;
   fecha: string;
+  /** Número de autorización del proveedor externo (null en modo simulado) */
+  autorizacion?: string | null;
+  proveedor?: string | null;
 }
 
 export interface Tarjeta {
@@ -127,4 +130,64 @@ export interface TipoCambio {
   referencial: boolean;
   actualizado: string;
   tasas: { moneda: string; nombre: string; compra: number; venta: number }[];
+}
+
+// ---------------------------------------------------------------- Préstamos
+export interface CuotaPrestamo {
+  numero: number;
+  vence: string;
+  capital: number;
+  interes: number;
+  total: number;
+  estado: 'PENDIENTE' | 'PAGADA';
+  pagadaAt: string | null;
+}
+
+export interface Prestamo {
+  id: string;
+  numero: string;
+  productoCodigo: string;
+  productoNombre: string;
+  monto: number;
+  tasaAnual: number;
+  cuotasTotal: number;
+  cuotasPagadas: number;
+  cuotasPendientes: number;
+  cuotaMonto: number;
+  saldoCapital: number;
+  estado: 'VIGENTE' | 'LIQUIDADO';
+  proximaCuota: { numero: number; vence: string; total: number } | null;
+  createdAt: string;
+}
+
+export interface PrestamoDetalle extends Prestamo {
+  cuotas: CuotaPrestamo[];
+}
+
+export interface ComprobantePrestamo {
+  referencia: string;
+  prestamo: string;
+  producto: string;
+  cuotasPagadas: number;
+  desdeCuota: number;
+  hastaCuota: number;
+  monto: number;
+  cuentaOrigen: string;
+  saldoCuenta: number;
+  saldoPrestamo: number;
+  cuotasPendientes: number;
+  liquidado: boolean;
+  fecha: string;
+}
+
+export interface ModoServicios {
+  externo: boolean;
+  proveedor: string;
+}
+
+export interface ConsultaServicio {
+  disponible: boolean;
+  titular?: string;
+  montoAdeudado?: number;
+  detalle?: string;
 }

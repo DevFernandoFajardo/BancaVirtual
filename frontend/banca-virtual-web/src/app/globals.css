@@ -166,6 +166,24 @@ textarea {
 .leaflet-marker-icon:hover .bv-pin {
   transform: scale(1.12);
 }
+.bv-cluster {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #3f6be0;
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.95rem;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 5px rgba(63, 107, 224, 0.28), 0 4px 10px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+.bv-cluster:hover {
+  transform: scale(1.1);
+}
 .bv-yo {
   position: relative;
   width: 22px;

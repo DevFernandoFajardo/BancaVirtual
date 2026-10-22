@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
+import MisPrestamos from '@/components/MisPrestamos';
 import { Card } from '@/components/ui/Card';
 import { Field, SelectField } from '@/components/ui/Field';
 import { amortizar } from '@/lib/amortizacion';
@@ -37,6 +38,8 @@ export default function PrestamosPage() {
 
   return (
     <div className="space-y-6">
+      <MisPrestamos />
+      <h2 className="text-lg font-semibold">Simulador de préstamos</h2>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,420px)_1fr]">
         <Card className="space-y-5">
           <SelectField label="Tipo de crédito" value={codigo} onChange={(e) => cambiarTipo(e.target.value)} options={TIPOS.map((t) => ({ value: t.codigo, label: `${t.nombre} · ${t.tasa}% anual` }))} />

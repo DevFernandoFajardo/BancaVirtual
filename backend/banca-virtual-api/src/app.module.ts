@@ -13,6 +13,8 @@ import { CpModule } from './cp/cp.module';
 import { DatabaseModule } from './database/database.module';
 import { ExtrasModule } from './extras/extras.module';
 import { NotificacionesModule } from './notificaciones/notificaciones.module';
+import { PrestamosModule } from './prestamos/prestamos.module';
+import { PushModule } from './push/push.module';
 import { SeguridadModule } from './seguridad/seguridad.module';
 import { ServiciosModule } from './servicios/servicios.module';
 import { SolicitudesModule } from './solicitudes/solicitudes.module';
@@ -25,6 +27,7 @@ import { TransferenciasModule } from './transferencias/transferencias.module';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     DatabaseModule,
     CpModule,
+    PushModule,
     NotificacionesModule,
     AuthModule,
     ClientesModule,
@@ -35,6 +38,7 @@ import { TransferenciasModule } from './transferencias/transferencias.module';
     TarjetasModule,
     SeguridadModule,
     ExtrasModule,
+    PrestamosModule,
     SolicitudesModule,
     AdminModule,
   ],

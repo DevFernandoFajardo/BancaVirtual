@@ -5,6 +5,9 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'BancaVirtual',
   description: 'Banca virtual · Proyecto final de Análisis de Sistemas II',
+  manifest: '/manifest.webmanifest',
+  icons: { icon: '/icon-192.png', apple: '/apple-touch-icon.png' },
+  appleWebApp: { capable: true, title: 'BancaVirtual', statusBarStyle: 'black-translucent' },
 };
 
 export const viewport: Viewport = {

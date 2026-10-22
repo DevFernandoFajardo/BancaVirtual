@@ -106,10 +106,16 @@ export class CpGestionesService {
   }
 
   /** Estado actual de una gestión en CP Gestiones (en minúsculas: en_evaluacion, aprobada, aceptada, en_tramite, emitida, cancelada…). */
-  async consultar(cpId: string, dpi: string): Promise<{ estado: string; version: number }> {
+  async consultar(cpId: string, dpi: string): Promise<{ estado: string; version: number; plazoMeses?: number }> {
     const r = await this.cp.get<any>(`/solicitudes/${encodeURIComponent(cpId)}`, { params: { dpi } });
     const sol = r?.solicitud ?? r;
-    return { estado: String(sol?.estado ?? '').toLowerCase(), version: Number(sol?.version ?? 1) };
+    // Si el banco definió el número de cuotas al aprobar, CP puede enviarlo con cualquiera de estos nombres
+    const plazo = Number(sol?.plazo_meses ?? sol?.numero_cuotas ?? sol?.cuotas ?? sol?.plazo ?? sol?.plazo_aprobado_meses);
+    return {
+      estado: String(sol?.estado ?? '').toLowerCase(),
+      version: Number(sol?.version ?? 1),
+      plazoMeses: Number.isInteger(plazo) && plazo > 0 ? plazo : undefined,
+    };
   }
 
   /** El cliente ya aceptó la oferta en BancaVirtual: se registra la aceptación en CP cuando la gestión está "aprobada". */

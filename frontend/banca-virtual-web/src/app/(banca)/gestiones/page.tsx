@@ -143,6 +143,12 @@ export default function GestionesPage() {
                   )}
 
                   {g.notaAdmin && <Alert tone="info">Nota del banco: {g.notaAdmin}</Alert>}
+
+                  {g.estado === 'EMITIDA' && ['CREDITO_PERSONAL', 'CREDITO_VEHICULAR', 'PRESTAMO_HIPOTECARIO'].includes(g.productoCodigo) && (
+                    <Link href="/prestamos" className="inline-flex min-h-11 items-center rounded-[10px] bg-brand-600 px-5 text-sm font-semibold text-white hover:bg-accent-dark">
+                      Ver mi préstamo y pagar cuotas
+                    </Link>
+                  )}
                 </Card>
               </li>
             );

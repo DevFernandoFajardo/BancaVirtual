@@ -1,5 +1,6 @@
 'use client';
 
+import PushActivar from '@/components/PushActivar';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Alert } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
@@ -37,6 +38,7 @@ export default function SeguridadPage() {
   return (
     <div className="space-y-6">
       {error && <Alert tone="error">{error}</Alert>}
+      <PushActivar />
       <CambiarPassword onCambio={cargar} />
       <DosFactores activo={!!dosFactores} onCambio={cargar} />
       <Sesiones sesiones={sesiones} onCambio={cargar} onError={setError} />

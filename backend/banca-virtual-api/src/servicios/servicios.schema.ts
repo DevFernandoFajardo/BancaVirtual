@@ -21,3 +21,15 @@ export class PagarServicioDto {
   @IsUUID()
   cuentaId: string;
 }
+
+export class ConsultarServicioDto {
+  @IsString()
+  @MaxLength(30)
+  servicioCodigo: string;
+
+  @IsString()
+  @MinLength(4)
+  @MaxLength(40)
+  @Matches(/^[A-Za-z0-9\-_.]+$/, { message: 'El contrato solo puede llevar letras, números y guiones' })
+  contrato: string;
+}

@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService, Queryable } from '../database/database.service';
+import { PushService } from '../push/push.service';
 
 export type TipoNotificacion = 'GESTION' | 'MOVIMIENTO' | 'PAGO' | 'TARJETA' | 'SEGURIDAD' | 'BANCO';
 
@@ -17,7 +18,10 @@ const COLS = `id, tipo, titulo, mensaje, enlace, leida, created_at AS "createdAt
 
 @Injectable()
 export class NotificacionesService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly push: PushService,
+  ) {}
 
   /** Crea un aviso para un cliente. Nunca debe romper la operación principal: los errores se ignoran. */
   async crear(
@@ -33,6 +37,8 @@ export class NotificacionesService {
         `INSERT INTO notificaciones (cliente_id, tipo, titulo, mensaje, enlace) VALUES ($1, $2, $3, $4, $5)`,
         [clienteId, tipo, titulo.slice(0, 120), mensaje.slice(0, 400), enlace ?? null],
       );
+      // Aviso al teléfono (Web Push). Se envía aparte, sin esperar, y solo si el aviso se guardó
+      void this.push.enviar(clienteId, titulo.slice(0, 120), mensaje.slice(0, 200), enlace ?? '/notificaciones');
     } catch {
       /* un aviso fallido no debe afectar dinero ni trámites */
     }
@@ -80,6 +86,7 @@ export class NotificacionesService {
            SELECT id, 'BANCO', $1, $2 FROM clientes WHERE rol = 'CLIENTE'`,
           [titulo, mensaje],
         );
+    void this.push.enviar(clienteId ?? null, titulo.slice(0, 120), mensaje.slice(0, 200), '/notificaciones');
     return { enviadas: r.rowCount };
   }
 }

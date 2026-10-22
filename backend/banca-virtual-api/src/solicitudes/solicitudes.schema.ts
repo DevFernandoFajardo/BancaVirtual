@@ -26,8 +26,11 @@ export const ESTADOS_SOLICITUD = [
 ] as const;
 export type EstadoSolicitud = (typeof ESTADOS_SOLICITUD)[number];
 
-/** Estados que bloquean una nueva solicitud del mismo producto */
-export const ESTADOS_VIGENTES: EstadoSolicitud[] = ['EN_EVALUACION', 'PENDIENTE_DECISION_CLIENTE', 'ACEPTADA', 'EMITIDA'];
+/**
+ * Estados que bloquean una nueva solicitud del MISMO producto (gestión en curso). Un cliente puede tener
+ * varios productos a la vez, y volver a pedir uno cuando el anterior ya fue completado (EMITIDA).
+ */
+export const ESTADOS_VIGENTES: EstadoSolicitud[] = ['EN_EVALUACION', 'PENDIENTE_DECISION_CLIENTE', 'ACEPTADA'];
 
 export interface Solicitud {
   id: string;
@@ -102,6 +105,13 @@ export class CrearSolicitudDto {
   @Min(1)
   @Max(5_000_000)
   montoSolicitado?: number;
+
+  /** Plazo deseado en meses (número de cuotas); solo préstamos */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(360)
+  plazoMeses?: number;
 }
 
 export class DecisionDto {
@@ -117,6 +127,13 @@ export class CambiarEstadoDto {
   @IsString()
   @MaxLength(300)
   nota?: string;
+
+  /** Número de cuotas del préstamo. Obligatorio al aprobar (EMITIDA) un crédito si el cliente no indicó plazo. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(360)
+  cuotas?: number;
 }
 
 export class FiltroSolicitudesDto {

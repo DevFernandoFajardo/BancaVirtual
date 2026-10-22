@@ -23,6 +23,18 @@ const ICONO_SVG: Record<TipoPunto, string> = {
     '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6.5 9.5h.01M17.5 14.5h.01"/></svg>',
 };
 
+const SERVICIOS_FILTRO = ['Retiros', 'Depósitos', 'Créditos y tarjetas', 'Caja de seguridad', 'Banca empresarial'] as const;
+type ModoRuta = 'auto' | 'pie';
+interface RutaInfo {
+  km: number;
+  min: number;
+  modo: ModoRuta;
+}
+const RUTA_URL: Record<ModoRuta, string> = {
+  auto: 'https://routing.openstreetmap.de/routed-car/route/v1/driving',
+  pie: 'https://routing.openstreetmap.de/routed-foot/route/v1/driving',
+};
+
 type Filtro = 'TODOS' | TipoPunto;
 type Capa = 'mapa' | 'satelite';
 type Altura = 'bajo' | 'medio' | 'alto';
@@ -47,6 +59,14 @@ export default function AgenciasMap() {
   const [tema, setTema] = useState<'claro' | 'oscuro'>('oscuro');
   const [altura, setAltura] = useState<Altura>('medio');
   const [ahora, setAhora] = useState(() => new Date());
+  const [soloAbiertos, setSoloAbiertos] = useState(false);
+  const [servicioFiltro, setServicioFiltro] = useState<string | null>(null);
+  const [zoomTick, setZoomTick] = useState(0);
+  const [ruta, setRuta] = useState<RutaInfo | null>(null);
+  const [buscandoRuta, setBuscandoRuta] = useState(false);
+  const capaRuta = useRef<Leaflet.LayerGroup | null>(null);
+  const clusters = useRef<Leaflet.Marker[]>([]);
+  const primeraVista = useRef(true);
 
   // ---- tema (claro/oscuro) y reloj para "abierto/cerrado"
   useEffect(() => {
@@ -63,11 +83,17 @@ export default function AgenciasMap() {
   // ---- lista filtrada y ordenada
   const resultados = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
-    const lista = PUNTOS.filter((p) => (filtro === 'TODOS' || p.tipo === filtro) && (!q || `${p.nombre} ${p.direccion} ${p.ciudad}`.toLowerCase().includes(q)));
+    const lista = PUNTOS.filter(
+      (p) =>
+        (filtro === 'TODOS' || p.tipo === filtro) &&
+        (!q || `${p.nombre} ${p.direccion} ${p.ciudad}`.toLowerCase().includes(q)) &&
+        (!soloAbiertos || estadoActual(p, ahora).abierto) &&
+        (!servicioFiltro || p.servicios.includes(servicioFiltro)),
+    );
     const conDist = lista.map((p) => ({ p, km: ubicacion ? distanciaKm(ubicacion, p) : null }));
     conDist.sort((a, b) => (a.km !== null && b.km !== null ? a.km - b.km : a.p.nombre.localeCompare(b.p.nombre)));
     return conDist;
-  }, [busqueda, filtro, ubicacion]);
+  }, [busqueda, filtro, ubicacion, soloAbiertos, servicioFiltro, ahora]);
 
   const seleccionado = PUNTOS.find((p) => p.id === seleccionId) ?? null;
 
@@ -82,6 +108,8 @@ export default function AgenciasMap() {
       m.attributionControl.setPrefix(false);
       mapa.current = m;
       yo.current = leaflet.layerGroup().addTo(m);
+      capaRuta.current = leaflet.layerGroup().addTo(m);
+      m.on('zoomend', () => setZoomTick((t) => t + 1));
       setListo(true);
       // el contenedor puede cambiar de tamaño al cargar
       setTimeout(() => m.invalidateSize(), 50);
@@ -91,6 +119,7 @@ export default function AgenciasMap() {
       mapa.current?.remove();
       mapa.current = null;
       marcadores.current.clear();
+      clusters.current = [];
     };
   }, []);
 
@@ -111,45 +140,84 @@ export default function AgenciasMap() {
     [],
   );
 
-  // ---- marcadores (según filtros)
+  // ---- marcadores: agrupa los cercanos en burbujas con contador (al acercar se separan); el seleccionado nunca se agrupa
   useEffect(() => {
     const lf = L.current;
     const m = mapa.current;
     if (!listo || !lf || !m) return;
-    const visibles = new Set(resultados.map((r) => r.p.id));
-    for (const [id, mk] of marcadores.current) {
-      if (!visibles.has(id)) {
-        mk.remove();
-        marcadores.current.delete(id);
+    for (const mk of marcadores.current.values()) mk.remove();
+    marcadores.current.clear();
+    for (const c of clusters.current) c.remove();
+    clusters.current = [];
+
+    const z = m.getZoom();
+    const umbral = z >= 14 ? 0 : 48; // px entre puntos para agruparlos
+    const grupos: { pts: Punto[]; x: number; y: number }[] = [];
+    for (const { p } of resultados) {
+      const pt = m.project([p.lat, p.lng], z);
+      const g = p.id === seleccionId || umbral === 0 ? null : grupos.find((g) => g.pts[0].id !== seleccionId && Math.hypot(g.x - pt.x, g.y - pt.y) < umbral);
+      if (g) g.pts.push(p);
+      else grupos.push({ pts: [p], x: pt.x, y: pt.y });
+    }
+    for (const g of grupos) {
+      if (g.pts.length === 1) {
+        const p = g.pts[0];
+        const activo = p.id === seleccionId;
+        const mk = lf
+          .marker([p.lat, p.lng], {
+            icon: lf.divIcon({ className: 'bv-pin-wrap', html: html(p, activo), iconSize: [38, 46], iconAnchor: [19, 44] }),
+            title: p.nombre,
+            keyboard: true,
+            riseOnHover: true,
+            zIndexOffset: activo ? 1000 : 0,
+          })
+          .addTo(m);
+        mk.on('click', () => setSeleccionId(p.id));
+        marcadores.current.set(p.id, mk);
+      } else {
+        const lat = g.pts.reduce((a, p) => a + p.lat, 0) / g.pts.length;
+        const lng = g.pts.reduce((a, p) => a + p.lng, 0) / g.pts.length;
+        const mk = lf
+          .marker([lat, lng], {
+            icon: lf.divIcon({ className: 'bv-pin-wrap', html: `<div class="bv-cluster" aria-label="${g.pts.length} puntos">${g.pts.length}</div>`, iconSize: [44, 44], iconAnchor: [22, 22] }),
+            title: `${g.pts.length} puntos`,
+            keyboard: true,
+          })
+          .addTo(m);
+        mk.on('click', () => m.flyToBounds(lf.latLngBounds(g.pts.map((p) => [p.lat, p.lng] as [number, number])), { padding: [70, 70], maxZoom: 16, duration: 0.7 }));
+        clusters.current.push(mk);
       }
     }
-    for (const { p } of resultados) {
-      if (marcadores.current.has(p.id)) continue;
-      const mk = lf
-        .marker([p.lat, p.lng], {
-          icon: lf.divIcon({ className: 'bv-pin-wrap', html: html(p, false), iconSize: [38, 46], iconAnchor: [19, 44] }),
-          title: p.nombre,
-          keyboard: true,
-          riseOnHover: true,
-        })
-        .addTo(m);
-      mk.on('click', () => setSeleccionId(p.id));
-      marcadores.current.set(p.id, mk);
-    }
-  }, [listo, resultados, html]);
+  }, [listo, resultados, seleccionId, zoomTick, html]);
 
-  // ---- resaltar el seleccionado
+  // ---- al cambiar búsqueda o filtros, el mapa encuadra los resultados (no en la carga inicial)
   useEffect(() => {
+    const m = mapa.current;
     const lf = L.current;
-    if (!lf) return;
-    for (const p of PUNTOS) {
-      const mk = marcadores.current.get(p.id);
-      if (!mk) continue;
-      const activo = p.id === seleccionId;
-      mk.setIcon(lf.divIcon({ className: 'bv-pin-wrap', html: html(p, activo), iconSize: [38, 46], iconAnchor: [19, 44] }));
-      mk.setZIndexOffset(activo ? 1000 : 0);
+    if (!listo || !m || !lf) return;
+    if (primeraVista.current) {
+      primeraVista.current = false;
+      return;
     }
-  }, [seleccionId, resultados, html]);
+    if (resultados.length === 0) return;
+    const esMovil = window.innerWidth < 1024;
+    const pts = resultados.map(({ p }) => [p.lat, p.lng] as [number, number]);
+    if (pts.length === 1) return void m.flyTo(pts[0], 15, { duration: 0.8 });
+    const alto = m.getSize().y;
+    m.flyToBounds(lf.latLngBounds(pts), {
+      paddingTopLeft: esMovil ? [30, 70] : [400, 40],
+      paddingBottomRight: esMovil ? [30, alto * 0.5] : [60, 40],
+      maxZoom: 15,
+      duration: 0.8,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listo, filtro, soloAbiertos, servicioFiltro, busqueda]);
+
+  // ---- la ruta se limpia al cambiar de punto
+  useEffect(() => {
+    capaRuta.current?.clearLayers();
+    setRuta(null);
+  }, [seleccionId]);
 
   const volarA = useCallback((p: Punto) => {
     setSeleccionId(p.id);
@@ -164,29 +232,85 @@ export default function AgenciasMap() {
   }, []);
 
   // ---- ubicación del usuario (punto azul estilo Apple Maps)
-  function localizar() {
+  function pedirUbicacion(): Promise<{ lat: number; lng: number } | null> {
     setAvisoGps('');
-    if (!navigator.geolocation) return setAvisoGps('Tu navegador no permite obtener la ubicación.');
+    if (!navigator.geolocation) {
+      setAvisoGps('Tu navegador no permite obtener la ubicación.');
+      return Promise.resolve(null);
+    }
     setBuscandoGps(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const u = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        setUbicacion(u);
-        setBuscandoGps(false);
-        const lf = L.current;
-        const m = mapa.current;
-        if (!lf || !m || !yo.current) return;
-        yo.current.clearLayers();
-        lf.circle([u.lat, u.lng], { radius: pos.coords.accuracy, color: '#2f7bff', weight: 1, fillColor: '#2f7bff', fillOpacity: 0.12, interactive: false }).addTo(yo.current);
-        lf.marker([u.lat, u.lng], { icon: lf.divIcon({ className: 'bv-yo-wrap', html: '<div class="bv-yo"><span></span></div>', iconSize: [22, 22], iconAnchor: [11, 11] }), interactive: false, zIndexOffset: 2000 }).addTo(yo.current);
-        m.flyTo([u.lat, u.lng], 14, { duration: 0.9 });
-      },
-      (err) => {
-        setBuscandoGps(false);
-        setAvisoGps(err.code === 1 ? 'Permite el acceso a tu ubicación para ver lo más cercano.' : 'No se pudo obtener tu ubicación.');
-      },
-      { enableHighAccuracy: true, timeout: 10_000 },
-    );
+    return new Promise((resolver) => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const u = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setUbicacion(u);
+          setBuscandoGps(false);
+          const lf = L.current;
+          const m = mapa.current;
+          if (lf && m && yo.current) {
+            yo.current.clearLayers();
+            lf.circle([u.lat, u.lng], { radius: pos.coords.accuracy, color: '#2f7bff', weight: 1, fillColor: '#2f7bff', fillOpacity: 0.12, interactive: false }).addTo(yo.current);
+            lf.marker([u.lat, u.lng], { icon: lf.divIcon({ className: 'bv-yo-wrap', html: '<div class="bv-yo"><span></span></div>', iconSize: [22, 22], iconAnchor: [11, 11] }), interactive: false, zIndexOffset: 2000 }).addTo(yo.current);
+          }
+          resolver(u);
+        },
+        (err) => {
+          setBuscandoGps(false);
+          setAvisoGps(err.code === 1 ? 'Permite el acceso a tu ubicación para ver lo más cercano.' : 'No se pudo obtener tu ubicación.');
+          resolver(null);
+        },
+        { enableHighAccuracy: true, timeout: 10_000 },
+      );
+    });
+  }
+
+  async function localizar() {
+    const u = await pedirUbicacion();
+    if (u) mapa.current?.flyTo([u.lat, u.lng], 14, { duration: 0.9 });
+  }
+
+  /** Va al punto abierto más cercano (si hay ubicación; si no, la pide). */
+  async function irAlMasCercano() {
+    const u = ubicacion ?? (await pedirUbicacion());
+    if (!u) return;
+    const candidatos = PUNTOS.filter((p) => (filtro === 'TODOS' || p.tipo === filtro) && estadoActual(p, ahora).abierto);
+    const mejor = (candidatos.length ? candidatos : PUNTOS).reduce((a, b) => (distanciaKm(u, a) <= distanciaKm(u, b) ? a : b));
+    volarA(mejor);
+  }
+
+  /** Dibuja en el mapa la ruta desde la ubicación del usuario hasta el punto elegido (OSRM, datos de OpenStreetMap). */
+  async function trazarRuta(p: Punto, modo: ModoRuta) {
+    const lf = L.current;
+    const m = mapa.current;
+    if (!lf || !m || !capaRuta.current) return;
+    setAvisoGps('');
+    const u = ubicacion ?? (await pedirUbicacion());
+    if (!u) return;
+    setBuscandoRuta(true);
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 12_000);
+    try {
+      const r = await fetch(`${RUTA_URL[modo]}/${u.lng},${u.lat};${p.lng},${p.lat}?overview=full&geometries=geojson`, { signal: ctl.signal });
+      const d = await r.json();
+      const best = d?.routes?.[0];
+      if (!r.ok || !best) throw new Error('sin ruta');
+      const pts = (best.geometry.coordinates as [number, number][]).map(([lng, lat]) => [lat, lng] as [number, number]);
+      capaRuta.current.clearLayers();
+      lf.polyline(pts, { color: '#ffffff', weight: 9, opacity: 0.9, lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(capaRuta.current);
+      lf.polyline(pts, { color: '#2f7bff', weight: 5.5, opacity: 1, lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(capaRuta.current);
+      setRuta({ km: best.distance / 1000, min: Math.max(1, Math.round(best.duration / 60)), modo });
+      const esMovil = window.innerWidth < 1024;
+      m.flyToBounds(lf.latLngBounds(pts), {
+        paddingTopLeft: esMovil ? [30, 70] : [400, 40],
+        paddingBottomRight: esMovil ? [30, m.getSize().y * 0.5] : [60, 40],
+        duration: 0.8,
+      });
+    } catch {
+      setAvisoGps('No se pudo calcular la ruta. Usa «Abrir en Maps».');
+    } finally {
+      clearTimeout(t);
+      setBuscandoRuta(false);
+    }
   }
 
   // ---- hoja inferior arrastrable (móvil)
@@ -280,7 +404,19 @@ export default function AgenciasMap() {
         </div>
 
         {seleccionado && estado ? (
-          <Detalle p={seleccionado} estado={estado} km={ubicacion ? distanciaKm(ubicacion, seleccionado) : null} onCerrar={() => setSeleccionId(null)} />
+          <Detalle
+            p={seleccionado}
+            estado={estado}
+            km={ubicacion ? distanciaKm(ubicacion, seleccionado) : null}
+            ruta={ruta}
+            buscandoRuta={buscandoRuta}
+            onRuta={(modo) => trazarRuta(seleccionado, modo)}
+            onQuitarRuta={() => {
+              capaRuta.current?.clearLayers();
+              setRuta(null);
+            }}
+            onCerrar={() => setSeleccionId(null)}
+          />
         ) : (
           <>
             <div className="space-y-3 px-4 pb-3 pt-1 lg:pt-4">
@@ -308,10 +444,24 @@ export default function AgenciasMap() {
                   </button>
                 ))}
               </div>
+              <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5" role="group" aria-label="Filtros rápidos">
+                <button type="button" aria-pressed={soloAbiertos} onClick={() => setSoloAbiertos((v) => !v)} className={`shrink-0 rounded-full border px-3 py-1 text-xs font-semibold transition ${soloAbiertos ? 'border-verde bg-verde text-navy-900' : 'border-line text-muted hover:text-ink'}`}>
+                  Abierto ahora
+                </button>
+                {SERVICIOS_FILTRO.map((sv) => (
+                  <button key={sv} type="button" aria-pressed={servicioFiltro === sv} onClick={() => setServicioFiltro((a) => (a === sv ? null : sv))} className={`shrink-0 rounded-full border px-3 py-1 text-xs font-semibold transition ${servicioFiltro === sv ? 'border-brand-500 bg-brand-50 text-brand-600' : 'border-line text-muted hover:text-ink'}`}>
+                    {sv}
+                  </button>
+                ))}
+              </div>
+              <button type="button" onClick={irAlMasCercano} disabled={buscandoGps} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#2f7bff] px-3 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-60">
+                <LocateIcon width={16} height={16} className={buscandoGps ? 'animate-pulse' : ''} />
+                Ir al más cercano
+              </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
               {resultados.length === 0 ? (
-                <p className="px-3 py-10 text-center text-sm text-muted">No encontramos resultados para «{busqueda}».</p>
+                <p className="px-3 py-10 text-center text-sm text-muted">{busqueda ? `No encontramos resultados para «${busqueda}».` : 'Ningún punto cumple esos filtros.'}</p>
               ) : (
                 <>
                   <p className="px-3 pb-1 pt-1 text-xs font-semibold uppercase tracking-wide text-muted">{ubicacion ? 'Cerca de ti' : 'Resultados'} · {resultados.length}</p>
@@ -346,7 +496,25 @@ export default function AgenciasMap() {
   );
 }
 
-function Detalle({ p, estado, km, onCerrar }: { p: Punto; estado: { abierto: boolean; texto: string }; km: number | null; onCerrar: () => void }) {
+function Detalle({
+  p,
+  estado,
+  km,
+  ruta,
+  buscandoRuta,
+  onRuta,
+  onQuitarRuta,
+  onCerrar,
+}: {
+  p: Punto;
+  estado: { abierto: boolean; texto: string };
+  km: number | null;
+  ruta: RutaInfo | null;
+  buscandoRuta: boolean;
+  onRuta: (modo: ModoRuta) => void;
+  onQuitarRuta: () => void;
+  onCerrar: () => void;
+}) {
   const dest = `${p.lat},${p.lng}`;
   const esApple = typeof navigator !== 'undefined' && /iPhone|iPad|Macintosh|Mac OS/i.test(navigator.userAgent);
   const rutaUrl = esApple ? `https://maps.apple.com/?daddr=${dest}&q=${encodeURIComponent(p.nombre)}` : `https://www.google.com/maps/dir/?api=1&destination=${dest}`;
@@ -365,22 +533,47 @@ function Detalle({ p, estado, km, onCerrar }: { p: Punto; estado: { abierto: boo
         </button>
       </div>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-4">
-        <div className="grid grid-cols-2 gap-2">
-          <a href={rutaUrl} target="_blank" rel="noopener noreferrer" className="flex flex-col items-center gap-1 rounded-xl bg-[#2f7bff] px-3 py-2.5 text-center text-sm font-semibold text-white hover:brightness-110">
-            <PinIcon width={20} height={20} />
-            Cómo llegar
-          </a>
-          {p.telefono ? (
-            <a href={`tel:${p.telefono.replace(/\D/g, '')}`} className="flex flex-col items-center gap-1 rounded-xl bg-input px-3 py-2.5 text-center text-sm font-semibold text-[#2f7bff] hover:bg-brand-50">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2Z" />
-              </svg>
-              Llamar
-            </a>
-          ) : (
-            <span className="flex flex-col items-center gap-1 rounded-xl bg-input px-3 py-2.5 text-center text-sm font-semibold text-muted">24 h</span>
-          )}
-        </div>
+        {ruta ? (
+          <section className="rounded-xl border border-[#2f7bff]/40 bg-[#2f7bff]/10 p-3.5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-[#2f7bff]">Ruta {ruta.modo === 'auto' ? 'en auto' : 'a pie'}</p>
+                <p className="tabular text-2xl font-extrabold">{ruta.min >= 60 ? `${Math.floor(ruta.min / 60)} h ${ruta.min % 60} min` : `${ruta.min} min`}</p>
+                <p className="text-sm text-muted">{formatDistancia(ruta.km)}</p>
+              </div>
+              <button onClick={onQuitarRuta} className="rounded-full bg-muted/25 px-3 py-1 text-xs font-semibold hover:bg-muted/40">
+                Quitar ruta
+              </button>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {(['auto', 'pie'] as const).map((m) => (
+                <button key={m} onClick={() => onRuta(m)} disabled={buscandoRuta} className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${ruta.modo === m ? 'bg-[#2f7bff] text-white' : 'bg-input text-ink hover:bg-brand-50'}`}>
+                  {m === 'auto' ? 'En auto' : 'A pie'}
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => onRuta('auto')} disabled={buscandoRuta} className="flex flex-col items-center gap-1 rounded-xl bg-[#2f7bff] px-3 py-2.5 text-center text-sm font-semibold text-white hover:brightness-110 disabled:opacity-70">
+              <PinIcon width={20} height={20} className={buscandoRuta ? 'animate-pulse' : ''} />
+              {buscandoRuta ? 'Calculando…' : 'Ver ruta'}
+            </button>
+            {p.telefono ? (
+              <a href={`tel:${p.telefono.replace(/\D/g, '')}`} className="flex flex-col items-center gap-1 rounded-xl bg-input px-3 py-2.5 text-center text-sm font-semibold text-[#2f7bff] hover:bg-brand-50">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2Z" />
+                </svg>
+                Llamar
+              </a>
+            ) : (
+              <span className="flex flex-col items-center gap-1 rounded-xl bg-input px-3 py-2.5 text-center text-sm font-semibold text-muted">Abierto 24 h</span>
+            )}
+          </div>
+        )}
+        <a href={rutaUrl} target="_blank" rel="noopener noreferrer" className="block rounded-xl border border-line px-3 py-2 text-center text-sm font-semibold text-muted hover:text-ink">
+          Abrir en {esApple ? 'Apple Maps' : 'Google Maps'}
+        </a>
 
         <section className="rounded-xl bg-input/80 p-3.5">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted">Dirección</p>

@@ -63,7 +63,7 @@ const TITULOS: { prefijo: string; titulo: string; subtitulo: string }[] = [
   { prefijo: '/tarjetas', titulo: 'Mis tarjetas', subtitulo: 'Límite, saldo, bloqueo y pagos de tus tarjetas.' },
   { prefijo: '/gestiones', titulo: 'Gestiones en línea', subtitulo: 'Da seguimiento a tus solicitudes y trámites paso a paso.' },
   { prefijo: '/productos', titulo: 'Productos', subtitulo: 'Solicita tarjetas y créditos y conoce el resultado de tu evaluación.' },
-  { prefijo: '/prestamos', titulo: 'Simulador de préstamos', subtitulo: 'Calcula tu cuota y revisa la tabla de amortización.' },
+  { prefijo: '/prestamos', titulo: 'Préstamos', subtitulo: 'Paga tus cuotas y simula nuevos créditos.' },
   { prefijo: '/tipo-cambio', titulo: 'Tipo de cambio', subtitulo: 'Tasas de referencia y conversor de monedas.' },
   { prefijo: '/agencias', titulo: 'Agencias y cajeros', subtitulo: 'Encuentra el punto de atención más cercano.' },
   { prefijo: '/notificaciones', titulo: 'Notificaciones', subtitulo: 'Avisos de tus gestiones, movimientos y mensajes del banco.' },

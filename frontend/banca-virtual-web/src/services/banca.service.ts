@@ -4,9 +4,14 @@ import type {
   Beneficiario,
   ComprobanteGuardado,
   ComprobantePago,
+  ComprobantePrestamo,
+  ConsultaServicio,
   CrearProgramadaRequest,
+  ModoServicios,
   Notificacion,
   PagoServicio,
+  Prestamo,
+  PrestamoDetalle,
   Programada,
   Servicio,
   Sesion,
@@ -52,6 +57,17 @@ export const serviciosService = {
   pagar: (data: { servicioCodigo: string; contrato: string; monto: number; cuentaId: string }) =>
     api<ComprobantePago>('/servicios/pagar', { method: 'POST', body: data }),
   historial: (page = 1, limit = 10) => api<Paginado<PagoServicio>>(`/servicios/pagos?page=${page}&limit=${limit}`),
+  modo: () => api<ModoServicios>('/servicios/modo'),
+  consultar: (servicioCodigo: string, contrato: string) =>
+    api<ConsultaServicio>('/servicios/consultar', { method: 'POST', body: { servicioCodigo, contrato } }),
+};
+
+export const prestamosService = {
+  listar: () => api<Prestamo[]>('/prestamos'),
+  detalle: (id: string) => api<PrestamoDetalle>(`/prestamos/${id}`),
+  /** Paga las próximas N cuotas pendientes con el saldo de una cuenta */
+  pagar: (id: string, cuentaId: string, cuotas: number) =>
+    api<ComprobantePrestamo>(`/prestamos/${id}/pagar`, { method: 'POST', body: { cuentaId, cuotas } }),
 };
 
 export const tarjetasService = {
@@ -87,4 +103,12 @@ export const seguridadService = {
 
 export const extrasService = {
   tipoCambio: () => api<TipoCambio>('/extras/tipo-cambio'),
+};
+
+export const pushService = {
+  config: () => api<{ habilitado: boolean; publicKey: string; dispositivos: number }>('/push/config'),
+  suscribir: (s: { endpoint: string; keys: { p256dh: string; auth: string }; userAgent?: string }) =>
+    api<{ ok: true }>('/push/suscribir', { method: 'POST', body: s }),
+  quitar: (endpoint: string) => api<{ ok: true }>('/push/suscripcion', { method: 'DELETE', body: { endpoint } }),
+  probar: () => api<{ ok: true }>('/push/probar', { method: 'POST' }),
 };

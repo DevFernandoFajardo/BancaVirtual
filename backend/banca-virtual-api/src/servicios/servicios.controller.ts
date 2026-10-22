@@ -1,9 +1,9 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { AuthUser } from '../auth/auth.schema';
 import { Auth, CurrentUser } from '../auth/jwt-auth.guard';
 import { PaginacionDto } from '../common/pagination.schema';
-import { PagarServicioDto } from './servicios.schema';
+import { ConsultarServicioDto, PagarServicioDto } from './servicios.schema';
 import { ServiciosService } from './servicios.service';
 
 @ApiTags('Pago de servicios')
@@ -15,6 +15,19 @@ export class ServiciosController {
   @Get()
   catalogo() {
     return this.servicios.catalogo();
+  }
+
+  /** Indica si los pagos van a la API externa o al modo simulado. */
+  @Get('modo')
+  modo() {
+    return this.servicios.modo();
+  }
+
+  /** Consulta al proveedor externo el monto adeudado de un contrato (si lo ofrece). */
+  @Post('consultar')
+  @HttpCode(200)
+  consultar(@Body() dto: ConsultarServicioDto) {
+    return this.servicios.consultar(dto);
   }
 
   @Post('pagar')

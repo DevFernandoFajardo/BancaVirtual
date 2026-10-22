@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { encrypt } from '../common/crypto.util';
 import { ClientesService } from '../clientes/clientes.service';
@@ -6,6 +6,8 @@ import { CpGestionesService } from '../cp/cp-gestiones.service';
 import { CoreClient } from '../core/core.client';
 import { CoreEvaluacionRequest } from '../core/core.types';
 import { DatabaseService, PG_UNIQUE_VIOLATION } from '../database/database.service';
+import { PrestamosService } from '../prestamos/prestamos.service';
+import { CONDICIONES_CREDITO, esCredito } from '../prestamos/prestamos.schema';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { TarjetasService } from '../tarjetas/tarjetas.service';
 import {
@@ -28,6 +30,7 @@ export class SolicitudesService {
     private readonly tarjetas: TarjetasService,
     private readonly clientes: ClientesService,
     private readonly cpGestiones: CpGestionesService,
+    private readonly prestamos: PrestamosService,
     config: ConfigService,
   ) {
     const n = Number(config.get('EVALUACION_DEMORA_SEGUNDOS') ?? 60);
@@ -91,6 +94,13 @@ export class SolicitudesService {
         // Columna agregada por database/04_cp_gestiones.sql; si aún no existe, la solicitud sigue igual
         await this.db
           .query('UPDATE solicitudes SET monto_solicitado = $2 WHERE id = $1', [s!.id, dto.montoSolicitado.toFixed(2)])
+          .catch(() => undefined);
+      }
+      const cond = CONDICIONES_CREDITO[dto.productoCodigo];
+      if (cond && dto.plazoMeses) {
+        // Plazo (cuotas) que desea el cliente; el banco puede ajustarlo al aprobar. Columna de database/05
+        await this.db
+          .query('UPDATE solicitudes SET plazo_meses = $2 WHERE id = $1', [s!.id, Math.min(dto.plazoMeses, cond.plazoMax)])
           .catch(() => undefined);
       }
       await this.liberarResultados(); // con demora 0 el resultado queda disponible al instante
@@ -225,12 +235,28 @@ export class SolicitudesService {
 
     const nuevo = cp.estado === 'emitida' ? 'EMITIDA' : cp.estado === 'cancelada' || cp.estado === 'rechazada' ? 'CANCELADA' : null;
     if (!nuevo) return;
-    const s = await this.db.one<Solicitud>(
-      `UPDATE solicitudes SET estado = $2, nota_admin = COALESCE(nota_admin, $3), updated_at = now()
-        WHERE id = $1 AND estado = 'ACEPTADA' RETURNING ${SOLICITUD_COLS}`,
-      [r.id, nuevo, nuevo === 'EMITIDA' ? 'Completada por el banco en CP Gestiones' : 'Cancelada por el banco en CP Gestiones'],
-    );
-    if (!s) return;
+    // Datos del crédito leídos ANTES de la transacción (si falta una columna, una consulta fallida abortaría la transacción)
+    const dc = nuevo === 'EMITIDA' ? await this.datosCredito(r.id) : null;
+    // En una transacción: si es un crédito, el cambio de estado y el alta del préstamo (cuotas + desembolso) van juntos
+    const hecho = await this.db.transaction(async (tx) => {
+      const s = await this.db.one<Solicitud>(
+        `UPDATE solicitudes SET estado = $2, nota_admin = COALESCE(nota_admin, $3), updated_at = now()
+          WHERE id = $1 AND estado = 'ACEPTADA' RETURNING ${SOLICITUD_COLS}`,
+        [r.id, nuevo, nuevo === 'EMITIDA' ? 'Completada por el banco en CP Gestiones' : 'Cancelada por el banco en CP Gestiones'],
+        tx,
+      );
+      if (!s) return null;
+      let prestamo = null;
+      if (nuevo === 'EMITIDA' && esCredito(s.productoCodigo)) {
+        // Cuotas: las que definió el banco en CP; si no, el plazo que pidió el cliente; si no, el estándar del producto
+        const cuotas = cp.plazoMeses ?? dc?.plazo ?? CONDICIONES_CREDITO[s.productoCodigo].plazoDef;
+        prestamo = await this.prestamos.otorgar(s, Math.min(cuotas, CONDICIONES_CREDITO[s.productoCodigo].plazoMax), dc?.monto ?? null, tx);
+      }
+      return { s, prestamo };
+    });
+    if (!hecho) return;
+    const { s } = hecho;
+    if (hecho.prestamo?.nuevo) await this.prestamos.avisarOtorgado(hecho.prestamo.prestamo);
     if (nuevo === 'EMITIDA' && s.productoCodigo === 'TARJETA_CREDITO') await this.tarjetas.emitirDesdeSolicitud(s.id);
     await this.notificaciones.crear(
       s.clienteId,
@@ -301,14 +327,38 @@ export class SolicitudesService {
   async cambiarEstado(id: string, dto: CambiarEstadoDto) {
     await this.liberarResultados();
     const desde = dto.estado === 'EMITIDA' ? ['ACEPTADA'] : ['ACEPTADA', 'PENDIENTE_DECISION_CLIENTE', 'EN_EVALUACION'];
-    const s = await this.db.one<Solicitud>(
-      `UPDATE solicitudes
-          SET estado = $2, nota_admin = COALESCE($3, nota_admin), updated_at = now()
-        WHERE id = $1 AND estado = ANY($4::text[])
-        RETURNING ${SOLICITUD_COLS}`,
-      [id, dto.estado, dto.nota ?? null, desde],
-    );
-    if (s) {
+
+    // Al aprobar un préstamo el banco DEBE definir el número de cuotas (o ya viene el plazo que pidió el cliente)
+    let cuotas: number | undefined;
+    let monto: number | null = null;
+    if (dto.estado === 'EMITIDA') {
+      const cur = await this.db.one<{ productoCodigo: string }>('SELECT producto_codigo AS "productoCodigo" FROM solicitudes WHERE id = $1', [id]);
+      if (cur && esCredito(cur.productoCodigo)) {
+        const dc = await this.datosCredito(id);
+        monto = dc.monto;
+        cuotas = dto.cuotas ?? dc.plazo ?? undefined;
+        const max = CONDICIONES_CREDITO[cur.productoCodigo].plazoMax;
+        if (!cuotas) throw new UnprocessableEntityException('Define el número de cuotas del préstamo (campo "cuotas") para aprobarlo');
+        if (cuotas > max) throw new UnprocessableEntityException(`El número de cuotas para este producto no puede superar ${max}`);
+      }
+    }
+
+    const hecho = await this.db.transaction(async (tx) => {
+      const s = await this.db.one<Solicitud>(
+        `UPDATE solicitudes
+            SET estado = $2, nota_admin = COALESCE($3, nota_admin), updated_at = now()
+          WHERE id = $1 AND estado = ANY($4::text[])
+          RETURNING ${SOLICITUD_COLS}`,
+        [id, dto.estado, dto.nota ?? null, desde],
+        tx,
+      );
+      if (!s) return null;
+      const prestamo = cuotas ? await this.prestamos.otorgar(s, cuotas, monto, tx) : null;
+      return { s, prestamo };
+    });
+    if (hecho) {
+      const { s } = hecho;
+      if (hecho.prestamo?.nuevo) await this.prestamos.avisarOtorgado(hecho.prestamo.prestamo);
       if (dto.estado === 'EMITIDA' && s.productoCodigo === 'TARJETA_CREDITO') await this.tarjetas.emitirDesdeSolicitud(s.id);
       await this.notificaciones.crear(
         s.clienteId,
@@ -317,12 +367,22 @@ export class SolicitudesService {
         `${s.productoNombre ?? 'Tu solicitud'}: ${dto.nota?.trim() || (dto.estado === 'EMITIDA' ? 'el banco completó el trámite.' : 'el banco canceló el trámite.')}`,
         '/gestiones',
       );
-      return this.toView(s, true);
+      return { ...this.toView(s, true), cuotas: hecho.prestamo?.prestamo.cuotasTotal ?? null };
     }
 
     const actual = await this.db.one<{ estado: string }>('SELECT estado FROM solicitudes WHERE id = $1', [id]);
     if (!actual) throw new NotFoundException('Solicitud no encontrada');
     throw new ConflictException(`No se puede pasar de ${actual.estado} a ${dto.estado}`);
+  }
+
+  /** Monto y plazo (meses = cuotas) que pidió el cliente; nulos si no los indicó o si las columnas aún no existen. */
+  private async datosCredito(id: string): Promise<{ monto: number | null; plazo: number | null }> {
+    const r = await this.db
+      .one<{ monto: string | null; plazo: number | null }>('SELECT monto_solicitado::text AS monto, plazo_meses AS plazo FROM solicitudes WHERE id = $1', [id])
+      .catch(() => null);
+    if (r) return { monto: r.monto ? Number(r.monto) : null, plazo: r.plazo ?? null };
+    const m = await this.db.one<{ monto: string | null }>('SELECT monto_solicitado::text AS monto FROM solicitudes WHERE id = $1', [id]).catch(() => null);
+    return { monto: m?.monto ? Number(m.monto) : null, plazo: null };
   }
 
   /** Vuelve a consultar la evaluación al CORE (útil para auditoría desde la app administrativa). */
