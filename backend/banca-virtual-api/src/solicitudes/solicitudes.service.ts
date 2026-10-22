@@ -33,8 +33,8 @@ export class SolicitudesService {
     private readonly prestamos: PrestamosService,
     config: ConfigService,
   ) {
-    const n = Number(config.get('EVALUACION_DEMORA_SEGUNDOS') ?? 60);
-    this.demoraSegundos = Number.isFinite(n) && n >= 0 ? Math.floor(n) : 60;
+    const n = Number(config.get('EVALUACION_DEMORA_SEGUNDOS') ?? 20);
+    this.demoraSegundos = Number.isFinite(n) && n >= 0 ? Math.floor(n) : 20;
   }
 
   /** Espera de demostración antes de mostrar el resultado al cliente (0 = inmediato) */

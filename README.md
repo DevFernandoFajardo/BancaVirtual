@@ -26,7 +26,7 @@ Con tu contenedor `postgres_desarrolloweb` encendido, en pgAdmin:
 1. Conéctate al servidor, abre **Query Tool** sobre la base `postgres` y ejecuta `database/00_crear_base_de_datos.sql`.
 2. Refresca, abre **Query Tool** sobre la nueva base `banca_virtual` y ejecuta `database/01_esquema.sql`.
 3. Ejecuta también `database/02_solicitudes_en_evaluacion.sql` en esa misma base (agrega la espera de evaluación; si ya tenías la base creada, es obligatorio).
-4. Ejecuta también `database/03_banca_completa.sql` (idempotente): plazo fijo, sesiones, beneficiarios, transferencias programadas, pago de servicios, tarjetas, notificaciones y seguridad (2FA / bloqueo). Orden: 01, 02, 03. (`03_monto_solicitado.sql` quedó obsoleto: bórralo.)
+4. Ejecuta también `database/03_banca_completa.sql` (idempotente): plazo fijo, sesiones, beneficiarios, transferencias programadas, pago de servicios, tarjetas, notificaciones y seguridad (2FA / bloqueo). Orden: 01, 02, 03, 04 (04 = enlace de productos con CP Gestiones). (`03_monto_solicitado.sql` quedó obsoleto: bórralo.)
 5. En `frontend/banca-virtual-web` ejecuta `npm install` (nuevas dependencias: jspdf, jspdf-autotable, leaflet, qrcode) y reinicia API y web. Tras actualizar hay que **volver a iniciar sesión** (ahora existen sesiones activas).
 
 El esquema es idempotente (puedes correrlo de nuevo sin perder datos). `99_reiniciar_datos_SOLO_DESARROLLO.sql` borra todo si necesitas empezar de cero.
@@ -46,7 +46,7 @@ Edita el archivo `.env` que acabas de crear:
 | `DB_USER` / `DB_PASSWORD` / `DB_PORT` | Los de tu contenedor de PostgreSQL |
 | `CORE_BASE_URL` | `http://creditpulse.somee.com/api/v1` (el servidor del CORE responde por **http**; con https la conexión se resetea) |
 | `CORE_API_KEY` | La API key de CreditPulse (ver aviso de seguridad abajo) |
-| `EVALUACION_DEMORA_SEGUNDOS` | Segundos de espera antes de mostrar el resultado (demo: 60) |
+| `EVALUACION_DEMORA_SEGUNDOS` | Segundos de espera antes de mostrar el resultado (demo: 20) |
 | `JWT_SECRET`, `ENCRYPTION_KEY`, `SERVICE_API_KEY` | Cambia los tres por valores aleatorios propios (comando abajo). `SERVICE_API_KEY` es la llave que usará la app administrativa. **No cambies `ENCRYPTION_KEY` después de registrar clientes**: DPI y NIT quedarían ilegibles |
 
 Para generar cada secreto aleatorio:
@@ -79,7 +79,7 @@ Abre http://localhost:3000, regístrate y se te crea tu primera cuenta de ahorro
 ## Flujo de solicitud de tarjeta
 
 1. El cliente llena el formulario (nombre, apellido, DPI, NIT, fecha de nacimiento, ingresos, tipo de empleo, antigüedad): son los campos de `POST /evaluaciones` del CORE.
-2. `POST /solicitudes` envía los datos al CORE y guarda la evaluación con estado `EN_EVALUACION`. Durante la espera (por defecto **60 segundos**, variable `EVALUACION_DEMORA_SEGUNDOS`; `0` = inmediato) el resultado no se muestra.
+2. `POST /solicitudes` envía los datos al CORE y guarda la evaluación con estado `EN_EVALUACION`. Durante la espera (por defecto **20 segundos**, variable `EVALUACION_DEMORA_SEGUNDOS`; `0` = inmediato) el resultado no se muestra.
 3. La web muestra la cuenta regresiva y consulta `GET /solicitudes/:id` hasta que pasa el tiempo; entonces aparece **Aprobada** o **No aprobada** (el detalle de las políticas queda en un enlace "Ver detalle").
 4. Si fue aprobada, el cliente decide: `POST /solicitudes/:id/decision` con `{ "aceptar": true | false }`. Si no, queda como `RECHAZADA_POR_POLITICAS`.
 
