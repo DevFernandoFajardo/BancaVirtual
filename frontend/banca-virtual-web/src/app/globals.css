@@ -163,7 +163,7 @@ textarea {
 .bv-pin--activo {
   transform: scale(1.28);
 }
-.leaflet-marker-icon:hover .bv-pin {
+.maplibregl-marker:hover .bv-pin {
   transform: scale(1.12);
 }
 .bv-cluster {
@@ -210,25 +210,24 @@ textarea {
     opacity: 0;
   }
 }
-.bv-mapa .leaflet-container {
+.bv-mapa .maplibregl-map {
   font-family: var(--font-sans);
   background: var(--color-input);
 }
-.bv-mapa .leaflet-control-attribution {
-  background: rgba(255, 255, 255, 0.7);
+.bv-mapa .maplibregl-ctrl-attribution {
   font-size: 10px;
-  border-radius: 8px 0 0 0;
+}
+/* Modo oscuro del mapa vectorial claro */
+.bv-mapa--oscuro .maplibregl-canvas {
+  filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.92) saturate(0.85);
 }
 /* En móvil la hoja tapa la parte baja: la atribución (obligatoria) pasa arriba a la izquierda */
 @media (max-width: 1023px) {
-  .bv-mapa .leaflet-bottom.leaflet-right {
+  .bv-mapa .maplibregl-ctrl-bottom-right {
     right: auto;
     left: 0;
     bottom: auto;
     top: 0;
-  }
-  .bv-mapa .leaflet-control-attribution {
-    border-radius: 0 0 8px 0;
   }
 }
 

@@ -1,20 +1,24 @@
 'use client';
 
-import 'leaflet/dist/leaflet.css';
-import type * as Leaflet from 'leaflet';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import type * as ML from 'maplibre-gl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HORARIO_TEXTO, PUNTOS, distanciaKm, estadoActual, formatDistancia, type Punto, type TipoPunto } from '@/lib/agencias';
 import { LocateIcon, PinIcon, SearchIcon } from './icons';
 
-const TILES = {
-  claro: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-  oscuro: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-  satelite: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-};
-const ATRIBUCION = {
-  carto: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-  esri: 'Tiles &copy; Esri',
-};
+/**
+ * Mapa vectorial (MapLibre GL + OpenFreeMap, sin llaves): nítido a cualquier zoom, con giro, inclinación y edificios en 3D.
+ * Si el estilo vectorial no carga, cae a mosaicos de OpenStreetMap.
+ */
+const ESTILO_VECTORIAL = 'https://tiles.openfreemap.org/styles/liberty';
+const raster = (tiles: string[], attribution: string): ML.StyleSpecification => ({
+  version: 8,
+  sources: { base: { type: 'raster', tiles, tileSize: 256, maxzoom: 19, attribution } },
+  layers: [{ id: 'base', type: 'raster', source: 'base' }],
+});
+const ESTILO_OSM = raster(['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], '&copy; OpenStreetMap');
+const ESTILO_SATELITE = raster(['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], 'Imágenes &copy; Esri');
+
 const COLOR: Record<TipoPunto, string> = { AGENCIA: '#3f6be0', CAJERO: '#17a673' };
 const ICONO_SVG: Record<TipoPunto, string> = {
   AGENCIA:
@@ -38,15 +42,21 @@ const RUTA_URL: Record<ModoRuta, string> = {
 type Filtro = 'TODOS' | TipoPunto;
 type Capa = 'mapa' | 'satelite';
 type Altura = 'bajo' | 'medio' | 'alto';
+type LngLat = [number, number];
+type RutaFeature = { type: 'Feature'; properties: Record<string, never>; geometry: { type: 'LineString'; coordinates: LngLat[] } };
+const ALTURAS: Record<Altura, number> = { bajo: 0.17, medio: 0.46, alto: 0.88 };
 
-/** Apple Maps-like: mapa a pantalla completa con hoja flotante (panel lateral en escritorio, hoja inferior en móvil). */
+/** Mapa a pantalla completa con hoja flotante (panel lateral en escritorio, hoja inferior arrastrable en móvil). */
 export default function AgenciasMap() {
   const contenedor = useRef<HTMLDivElement>(null);
-  const mapa = useRef<Leaflet.Map | null>(null);
-  const L = useRef<typeof Leaflet | null>(null);
-  const capaBase = useRef<Leaflet.TileLayer | null>(null);
-  const marcadores = useRef<Map<string, Leaflet.Marker>>(new Map());
-  const yo = useRef<Leaflet.LayerGroup | null>(null);
+  const marco = useRef<HTMLDivElement>(null);
+  const mapa = useRef<ML.Map | null>(null);
+  const ML_ = useRef<typeof ML | null>(null);
+  const marcadores = useRef<ML.Marker[]>([]);
+  const yo = useRef<ML.Marker | null>(null);
+  const rutaGeo = useRef<RutaFeature | null>(null);
+  const estiloOk = useRef(false);
+  const primeraVista = useRef(true);
 
   const [listo, setListo] = useState(false);
   const [busqueda, setBusqueda] = useState('');
@@ -61,12 +71,10 @@ export default function AgenciasMap() {
   const [ahora, setAhora] = useState(() => new Date());
   const [soloAbiertos, setSoloAbiertos] = useState(false);
   const [servicioFiltro, setServicioFiltro] = useState<string | null>(null);
-  const [zoomTick, setZoomTick] = useState(0);
+  const [vistaTick, setVistaTick] = useState(0);
+  const [inclinado, setInclinado] = useState(false);
   const [ruta, setRuta] = useState<RutaInfo | null>(null);
   const [buscandoRuta, setBuscandoRuta] = useState(false);
-  const capaRuta = useRef<Leaflet.LayerGroup | null>(null);
-  const clusters = useRef<Leaflet.Marker[]>([]);
-  const primeraVista = useRef(true);
 
   // ---- tema (claro/oscuro) y reloj para "abierto/cerrado"
   useEffect(() => {
@@ -97,44 +105,87 @@ export default function AgenciasMap() {
 
   const seleccionado = PUNTOS.find((p) => p.id === seleccionId) ?? null;
 
+  /** Márgenes para que el punto quede visible fuera de la hoja (panel izquierdo en escritorio, hoja inferior en móvil). */
+  const relleno = useCallback((): ML.PaddingOptions => {
+    const alto = contenedor.current?.clientHeight ?? 600;
+    return window.innerWidth >= 1024
+      ? { top: 40, bottom: 40, left: 400, right: 60 }
+      : { top: 70, bottom: Math.round(alto * ALTURAS[altura]) + 20, left: 30, right: 30 };
+  }, [altura]);
+
+  // ---- ruta dibujada (se vuelve a pintar si cambia el estilo del mapa)
+  const pintarRuta = useCallback(() => {
+    const m = mapa.current;
+    if (!m || !m.isStyleLoaded()) return;
+    const data = { type: 'FeatureCollection', features: rutaGeo.current ? [rutaGeo.current] : [] } as const;
+    const src = m.getSource('ruta') as ML.GeoJSONSource | undefined;
+    if (src) return void src.setData(data);
+    m.addSource('ruta', { type: 'geojson', data });
+    m.addLayer({ id: 'ruta-borde', type: 'line', source: 'ruta', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#ffffff', 'line-width': 9, 'line-opacity': 0.95 } });
+    m.addLayer({ id: 'ruta-linea', type: 'line', source: 'ruta', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#2f7bff', 'line-width': 5.5 } });
+  }, []);
+
   // ---- crear el mapa una sola vez
   useEffect(() => {
     let cancelado = false;
     (async () => {
-      const leaflet = (await import('leaflet')).default;
+      const ml = await import('maplibre-gl');
       if (cancelado || !contenedor.current || mapa.current) return;
-      L.current = leaflet;
-      const m = leaflet.map(contenedor.current, { zoomControl: false, attributionControl: true, center: [14.6, -90.53], zoom: 12, zoomSnap: 0.25, worldCopyJump: true });
-      m.attributionControl.setPrefix(false);
+      ML_.current = ml;
+      // El worker se sirve desde /public (evita problemas de empaquetado con workers en Next)
+      ml.setWorkerUrl('/maplibre/maplibre-gl-worker.mjs');
+      const m = new ml.Map({
+        container: contenedor.current,
+        style: ESTILO_VECTORIAL,
+        center: [-90.53, 14.6],
+        zoom: 12,
+        maxPitch: 70,
+        attributionControl: { compact: true },
+        canvasContextAttributes: { antialias: true },
+      });
       mapa.current = m;
-      yo.current = leaflet.layerGroup().addTo(m);
-      capaRuta.current = leaflet.layerGroup().addTo(m);
-      m.on('zoomend', () => setZoomTick((t) => t + 1));
+      m.on('style.load', () => {
+        estiloOk.current = true;
+        pintarRuta();
+      });
+      // Si el estilo vectorial no se puede cargar, se usa OpenStreetMap
+      m.on('error', () => {
+        if (!estiloOk.current) {
+          estiloOk.current = true;
+          m.setStyle(ESTILO_OSM);
+        }
+      });
+      const tick = () => setVistaTick((t) => t + 1);
+      m.on('zoomend', tick);
+      m.on('pitchend', tick);
+      m.on('rotateend', tick);
+      m.on('pitchend', () => setInclinado(m.getPitch() > 10));
       setListo(true);
-      // el contenedor puede cambiar de tamaño al cargar
-      setTimeout(() => m.invalidateSize(), 50);
     })();
+    const obs = new ResizeObserver(() => mapa.current?.resize());
+    if (marco.current) obs.observe(marco.current);
     return () => {
       cancelado = true;
+      obs.disconnect();
+      for (const mk of marcadores.current) mk.remove();
+      marcadores.current = [];
       mapa.current?.remove();
       mapa.current = null;
-      marcadores.current.clear();
-      clusters.current = [];
+      estiloOk.current = false;
     };
-  }, []);
+  }, [pintarRuta]);
 
-  // ---- capa base según tema / satélite
+  // ---- capa base: mapa vectorial / satélite
+  const capaAnterior = useRef<Capa>('mapa');
   useEffect(() => {
-    if (!listo || !mapa.current || !L.current) return;
-    capaBase.current?.remove();
-    const url = capa === 'satelite' ? TILES.satelite : tema === 'claro' ? TILES.claro : TILES.oscuro;
-    capaBase.current = L.current
-      .tileLayer(url, { maxZoom: 19, subdomains: 'abcd', attribution: capa === 'satelite' ? ATRIBUCION.esri : ATRIBUCION.carto, detectRetina: false })
-      .addTo(mapa.current);
-    capaBase.current.bringToBack();
-  }, [listo, capa, tema]);
+    const m = mapa.current;
+    if (!listo || !m || capaAnterior.current === capa) return;
+    capaAnterior.current = capa;
+    estiloOk.current = capa === 'satelite';
+    m.setStyle(capa === 'satelite' ? ESTILO_SATELITE : ESTILO_VECTORIAL);
+  }, [listo, capa]);
 
-  const html = useCallback(
+  const htmlPin = useCallback(
     (p: Punto, activo: boolean) =>
       `<div class="bv-pin${activo ? ' bv-pin--activo' : ''}" style="--c:${COLOR[p.tipo]}"><span class="bv-pin__cuerpo">${ICONO_SVG[p.tipo]}</span><span class="bv-pin__punta"></span></div>`,
     [],
@@ -142,94 +193,86 @@ export default function AgenciasMap() {
 
   // ---- marcadores: agrupa los cercanos en burbujas con contador (al acercar se separan); el seleccionado nunca se agrupa
   useEffect(() => {
-    const lf = L.current;
+    const ml = ML_.current;
     const m = mapa.current;
-    if (!listo || !lf || !m) return;
-    for (const mk of marcadores.current.values()) mk.remove();
-    marcadores.current.clear();
-    for (const c of clusters.current) c.remove();
-    clusters.current = [];
+    if (!listo || !ml || !m) return;
+    for (const mk of marcadores.current) mk.remove();
+    marcadores.current = [];
 
     const z = m.getZoom();
-    const umbral = z >= 14 ? 0 : 48; // px entre puntos para agruparlos
+    const umbral = z >= 14 ? 0 : 50; // px entre puntos para agruparlos
     const grupos: { pts: Punto[]; x: number; y: number }[] = [];
     for (const { p } of resultados) {
-      const pt = m.project([p.lat, p.lng], z);
+      const pt = m.project([p.lng, p.lat]);
       const g = p.id === seleccionId || umbral === 0 ? null : grupos.find((g) => g.pts[0].id !== seleccionId && Math.hypot(g.x - pt.x, g.y - pt.y) < umbral);
       if (g) g.pts.push(p);
       else grupos.push({ pts: [p], x: pt.x, y: pt.y });
     }
     for (const g of grupos) {
+      const el = document.createElement('div');
+      el.className = 'bv-pin-wrap';
       if (g.pts.length === 1) {
         const p = g.pts[0];
         const activo = p.id === seleccionId;
-        const mk = lf
-          .marker([p.lat, p.lng], {
-            icon: lf.divIcon({ className: 'bv-pin-wrap', html: html(p, activo), iconSize: [38, 46], iconAnchor: [19, 44] }),
-            title: p.nombre,
-            keyboard: true,
-            riseOnHover: true,
-            zIndexOffset: activo ? 1000 : 0,
-          })
-          .addTo(m);
-        mk.on('click', () => setSeleccionId(p.id));
-        marcadores.current.set(p.id, mk);
+        el.innerHTML = htmlPin(p, activo);
+        el.style.zIndex = activo ? '10' : '1';
+        el.title = p.nombre;
+        el.setAttribute('role', 'button');
+        el.tabIndex = 0;
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          setSeleccionId(p.id);
+        });
+        el.addEventListener('keydown', (e) => e.key === 'Enter' && setSeleccionId(p.id));
+        marcadores.current.push(new ml.Marker({ element: el, anchor: 'bottom' }).setLngLat([p.lng, p.lat]).addTo(m));
       } else {
         const lat = g.pts.reduce((a, p) => a + p.lat, 0) / g.pts.length;
         const lng = g.pts.reduce((a, p) => a + p.lng, 0) / g.pts.length;
-        const mk = lf
-          .marker([lat, lng], {
-            icon: lf.divIcon({ className: 'bv-pin-wrap', html: `<div class="bv-cluster" aria-label="${g.pts.length} puntos">${g.pts.length}</div>`, iconSize: [44, 44], iconAnchor: [22, 22] }),
-            title: `${g.pts.length} puntos`,
-            keyboard: true,
-          })
-          .addTo(m);
-        mk.on('click', () => m.flyToBounds(lf.latLngBounds(g.pts.map((p) => [p.lat, p.lng] as [number, number])), { padding: [70, 70], maxZoom: 16, duration: 0.7 }));
-        clusters.current.push(mk);
+        el.innerHTML = `<div class="bv-cluster" aria-label="${g.pts.length} puntos">${g.pts.length}</div>`;
+        el.title = `${g.pts.length} puntos`;
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const b = new ml.LngLatBounds();
+          g.pts.forEach((p) => b.extend([p.lng, p.lat]));
+          m.fitBounds(b, { padding: 90, maxZoom: 16, duration: 700 });
+        });
+        marcadores.current.push(new ml.Marker({ element: el, anchor: 'center' }).setLngLat([lng, lat]).addTo(m));
       }
     }
-  }, [listo, resultados, seleccionId, zoomTick, html]);
+  }, [listo, resultados, seleccionId, vistaTick, htmlPin]);
 
   // ---- al cambiar búsqueda o filtros, el mapa encuadra los resultados (no en la carga inicial)
   useEffect(() => {
     const m = mapa.current;
-    const lf = L.current;
-    if (!listo || !m || !lf) return;
+    const ml = ML_.current;
+    if (!listo || !m || !ml) return;
     if (primeraVista.current) {
       primeraVista.current = false;
       return;
     }
     if (resultados.length === 0) return;
-    const esMovil = window.innerWidth < 1024;
-    const pts = resultados.map(({ p }) => [p.lat, p.lng] as [number, number]);
-    if (pts.length === 1) return void m.flyTo(pts[0], 15, { duration: 0.8 });
-    const alto = m.getSize().y;
-    m.flyToBounds(lf.latLngBounds(pts), {
-      paddingTopLeft: esMovil ? [30, 70] : [400, 40],
-      paddingBottomRight: esMovil ? [30, alto * 0.5] : [60, 40],
-      maxZoom: 15,
-      duration: 0.8,
-    });
+    if (resultados.length === 1) return void m.flyTo({ center: [resultados[0].p.lng, resultados[0].p.lat], zoom: 15, padding: relleno(), duration: 800 });
+    const b = new ml.LngLatBounds();
+    resultados.forEach(({ p }) => b.extend([p.lng, p.lat]));
+    m.fitBounds(b, { padding: relleno(), maxZoom: 15, duration: 800 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listo, filtro, soloAbiertos, servicioFiltro, busqueda]);
 
   // ---- la ruta se limpia al cambiar de punto
   useEffect(() => {
-    capaRuta.current?.clearLayers();
+    rutaGeo.current = null;
+    pintarRuta();
     setRuta(null);
-  }, [seleccionId]);
+  }, [seleccionId, pintarRuta]);
 
-  const volarA = useCallback((p: Punto) => {
-    setSeleccionId(p.id);
-    const m = mapa.current;
-    if (!m) return;
-    const esMovil = window.innerWidth < 1024;
-    // En escritorio el panel tapa la izquierda; en móvil, la parte baja: se desplaza el centro para que el punto quede visible
-    const destino = m.project([p.lat, p.lng], 16);
-    const desplazado = esMovil ? destino.add([0, m.getSize().y * 0.2]) : destino.subtract([190, 0]);
-    m.flyTo(m.unproject(desplazado, 16), 16, { duration: 0.9 });
-    if (esMovil) setAltura('medio');
-  }, []);
+  const volarA = useCallback(
+    (p: Punto) => {
+      setSeleccionId(p.id);
+      mapa.current?.flyTo({ center: [p.lng, p.lat], zoom: 16, padding: relleno(), duration: 900, essential: true });
+      if (window.innerWidth < 1024) setAltura('medio');
+    },
+    [relleno],
+  );
 
   // ---- ubicación del usuario (punto azul estilo Apple Maps)
   function pedirUbicacion(): Promise<{ lat: number; lng: number } | null> {
@@ -245,12 +288,15 @@ export default function AgenciasMap() {
           const u = { lat: pos.coords.latitude, lng: pos.coords.longitude };
           setUbicacion(u);
           setBuscandoGps(false);
-          const lf = L.current;
+          const ml = ML_.current;
           const m = mapa.current;
-          if (lf && m && yo.current) {
-            yo.current.clearLayers();
-            lf.circle([u.lat, u.lng], { radius: pos.coords.accuracy, color: '#2f7bff', weight: 1, fillColor: '#2f7bff', fillOpacity: 0.12, interactive: false }).addTo(yo.current);
-            lf.marker([u.lat, u.lng], { icon: lf.divIcon({ className: 'bv-yo-wrap', html: '<div class="bv-yo"><span></span></div>', iconSize: [22, 22], iconAnchor: [11, 11] }), interactive: false, zIndexOffset: 2000 }).addTo(yo.current);
+          if (ml && m) {
+            yo.current?.remove();
+            const el = document.createElement('div');
+            el.className = 'bv-yo-wrap';
+            el.innerHTML = '<div class="bv-yo"><span></span></div>';
+            el.style.zIndex = '5';
+            yo.current = new ml.Marker({ element: el, anchor: 'center' }).setLngLat([u.lng, u.lat]).addTo(m);
           }
           resolver(u);
         },
@@ -266,7 +312,7 @@ export default function AgenciasMap() {
 
   async function localizar() {
     const u = await pedirUbicacion();
-    if (u) mapa.current?.flyTo([u.lat, u.lng], 14, { duration: 0.9 });
+    if (u) mapa.current?.flyTo({ center: [u.lng, u.lat], zoom: 14, duration: 900 });
   }
 
   /** Va al punto abierto más cercano (si hay ubicación; si no, la pide). */
@@ -280,9 +326,9 @@ export default function AgenciasMap() {
 
   /** Dibuja en el mapa la ruta desde la ubicación del usuario hasta el punto elegido (OSRM, datos de OpenStreetMap). */
   async function trazarRuta(p: Punto, modo: ModoRuta) {
-    const lf = L.current;
+    const ml = ML_.current;
     const m = mapa.current;
-    if (!lf || !m || !capaRuta.current) return;
+    if (!ml || !m) return;
     setAvisoGps('');
     const u = ubicacion ?? (await pedirUbicacion());
     if (!u) return;
@@ -294,17 +340,13 @@ export default function AgenciasMap() {
       const d = await r.json();
       const best = d?.routes?.[0];
       if (!r.ok || !best) throw new Error('sin ruta');
-      const pts = (best.geometry.coordinates as [number, number][]).map(([lng, lat]) => [lat, lng] as [number, number]);
-      capaRuta.current.clearLayers();
-      lf.polyline(pts, { color: '#ffffff', weight: 9, opacity: 0.9, lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(capaRuta.current);
-      lf.polyline(pts, { color: '#2f7bff', weight: 5.5, opacity: 1, lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(capaRuta.current);
+      const coords = best.geometry.coordinates as LngLat[];
+      rutaGeo.current = { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } };
+      pintarRuta();
       setRuta({ km: best.distance / 1000, min: Math.max(1, Math.round(best.duration / 60)), modo });
-      const esMovil = window.innerWidth < 1024;
-      m.flyToBounds(lf.latLngBounds(pts), {
-        paddingTopLeft: esMovil ? [30, 70] : [400, 40],
-        paddingBottomRight: esMovil ? [30, m.getSize().y * 0.5] : [60, 40],
-        duration: 0.8,
-      });
+      const b = new ml.LngLatBounds();
+      coords.forEach((c) => b.extend(c));
+      m.fitBounds(b, { padding: relleno(), duration: 900 });
     } catch {
       setAvisoGps('No se pudo calcular la ruta. Usa «Abrir en Maps».');
     } finally {
@@ -316,7 +358,6 @@ export default function AgenciasMap() {
   // ---- hoja inferior arrastrable (móvil)
   const arrastre = useRef<{ y: number; h: number } | null>(null);
   const hoja = useRef<HTMLDivElement>(null);
-  const ALTURAS: Record<Altura, number> = { bajo: 0.17, medio: 0.46, alto: 0.88 };
   function iniciarArrastre(e: React.PointerEvent) {
     if (!hoja.current) return;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -340,11 +381,12 @@ export default function AgenciasMap() {
     setAltura(cerca);
   }
 
-  const zoom = (d: number) => mapa.current?.setZoom((mapa.current.getZoom() ?? 12) + d);
+  const zoom = (d: number) => (d > 0 ? mapa.current?.zoomIn() : mapa.current?.zoomOut());
+  const alternarInclinacion = () => mapa.current?.easeTo(mapa.current.getPitch() > 10 ? { pitch: 0, bearing: 0, duration: 600 } : { pitch: 62, duration: 700 });
   const estado = seleccionado ? estadoActual(seleccionado, ahora) : null;
 
   return (
-    <div className="bv-mapa relative h-[calc(100dvh-150px)] min-h-[520px] lg:h-[calc(100dvh-210px)] lg:min-h-[560px] overflow-hidden rounded-2xl border border-line shadow-card">
+    <div ref={marco} className={`bv-mapa ${tema === 'oscuro' && capa === 'mapa' ? 'bv-mapa--oscuro' : ''} relative isolate h-[calc(100dvh-150px)] min-h-[520px] lg:h-[calc(100dvh-210px)] lg:min-h-[560px] overflow-hidden rounded-2xl border border-line shadow-card`}>
       <div ref={contenedor} className="absolute inset-0 z-0 bg-input" role="application" aria-label="Mapa de agencias y cajeros" />
 
       {/* Controles flotantes (arriba a la derecha) */}
@@ -358,6 +400,14 @@ export default function AgenciasMap() {
             −
           </button>
         </div>
+        <button
+          onClick={alternarInclinacion}
+          className="grid h-10 w-10 place-items-center rounded-xl border border-black/10 bg-card/85 text-[.7rem] font-bold text-ink shadow-lg backdrop-blur-xl hover:bg-brand-50"
+          aria-label={inclinado ? 'Vista 2D' : 'Vista 3D'}
+          title={inclinado ? 'Vista 2D' : 'Vista 3D'}
+        >
+          {inclinado ? '2D' : '3D'}
+        </button>
         <button
           onClick={localizar}
           disabled={buscandoGps}
@@ -412,7 +462,8 @@ export default function AgenciasMap() {
             buscandoRuta={buscandoRuta}
             onRuta={(modo) => trazarRuta(seleccionado, modo)}
             onQuitarRuta={() => {
-              capaRuta.current?.clearLayers();
+              rutaGeo.current = null;
+              pintarRuta();
               setRuta(null);
             }}
             onCerrar={() => setSeleccionId(null)}
