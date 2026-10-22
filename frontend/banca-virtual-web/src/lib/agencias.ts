@@ -29,6 +29,7 @@ export const PUNTOS: Punto[] = [
   { id: 'a-antigua', tipo: 'AGENCIA', nombre: 'Agencia Antigua Guatemala', direccion: '5a. Avenida Norte 12, Centro', ciudad: 'Antigua Guatemala', lat: 14.5586, lng: -90.7345, horario: 'ESTANDAR', telefono: '7800-1040', servicios: SERV_AGENCIA },
   { id: 'a-xela', tipo: 'AGENCIA', nombre: 'Agencia Quetzaltenango', direccion: '4a. Calle 12-35, Zona 1', ciudad: 'Quetzaltenango', lat: 14.8347, lng: -91.5181, horario: 'ESTANDAR', telefono: '7700-1050', servicios: [...SERV_AGENCIA, 'Banca empresarial'] },
   { id: 'a-escuintla', tipo: 'AGENCIA', nombre: 'Agencia Escuintla', direccion: '4a. Avenida 6-10, Zona 1', ciudad: 'Escuintla', lat: 14.3050, lng: -90.7850, horario: 'ESTANDAR', telefono: '7800-1060', servicios: SERV_AGENCIA },
+  { id: 'a-cuilapa', tipo: 'AGENCIA', nombre: 'Agencia Cuilapa', direccion: '3a. Avenida 3-20, Zona 1', ciudad: 'Cuilapa, Santa Rosa', lat: 14.2792, lng: -90.2989, horario: 'ESTANDAR', telefono: '7800-1080', servicios: SERV_AGENCIA },
   { id: 'a-coban', tipo: 'AGENCIA', nombre: 'Agencia Cobán', direccion: '1a. Calle 3-15, Zona 1', ciudad: 'Cobán', lat: 15.4708, lng: -90.3708, horario: 'ESTANDAR', telefono: '7900-1070', servicios: SERV_AGENCIA },
 
   { id: 'c-plaza', tipo: 'CAJERO', nombre: 'Cajero Plaza Mayor', direccion: 'Parque Central, Zona 1', ciudad: 'Ciudad de Guatemala', lat: 14.6417, lng: -90.5133, horario: '24H', servicios: ['Retiros', 'Consulta de saldo', 'Depósitos'] },
@@ -40,6 +41,7 @@ export const PUNTOS: Punto[] = [
   { id: 'c-z15', tipo: 'CAJERO', nombre: 'Cajero Paseo Cayalá', direccion: 'Ciudad Cayalá, Zona 16', ciudad: 'Ciudad de Guatemala', lat: 14.6080, lng: -90.4690, horario: 'CENTRO_COMERCIAL', servicios: ['Retiros', 'Consulta de saldo', 'Depósitos'] },
   { id: 'c-mixco', tipo: 'CAJERO', nombre: 'Cajero Metronorte', direccion: 'Calzada Atanasio Tzul, Zona 3', ciudad: 'Ciudad de Guatemala', lat: 14.6560, lng: -90.5090, horario: 'CENTRO_COMERCIAL', servicios: ['Retiros', 'Consulta de saldo'] },
   { id: 'c-antigua', tipo: 'CAJERO', nombre: 'Cajero Antigua · Parque', direccion: 'Parque Central, Antigua Guatemala', ciudad: 'Antigua Guatemala', lat: 14.5568, lng: -90.7333, horario: '24H', servicios: ['Retiros', 'Consulta de saldo'] },
+  { id: 'c-cuilapa', tipo: 'CAJERO', nombre: 'Cajero Cuilapa · Parque Central', direccion: 'Parque Central, Zona 1', ciudad: 'Cuilapa, Santa Rosa', lat: 14.2785, lng: -90.2985, horario: '24H', servicios: ['Retiros', 'Consulta de saldo', 'Depósitos'] },
   { id: 'c-xela', tipo: 'CAJERO', nombre: 'Cajero Parque Central Xela', direccion: 'Parque Centroamérica, Zona 1', ciudad: 'Quetzaltenango', lat: 14.8443, lng: -91.5186, horario: '24H', servicios: ['Retiros', 'Consulta de saldo'] },
 ];
 
