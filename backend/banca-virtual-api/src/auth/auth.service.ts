@@ -187,7 +187,7 @@ export class AuthService implements OnModuleInit {
           ],
           tx,
         );
-        await this.cuentas.abrir(row!.id, 'AHORRO', 'Mi cuenta de ahorro', tx);
+        // Sin cuenta automática: las cuentas (ahorro y monetaria) las abre el banco en CP Gestiones, enlazadas por DPI
         return row!.id;
       });
       return await this.clientes.obtener(id);

@@ -36,7 +36,7 @@ App administrativa ───► /admin/* de la API (header X-Service-Key = SERVI
 Las credenciales viven **solo en CP Gestiones** (colección `clientes` de su MongoDB). Aquí NO se guarda ninguna contraseña de clientes.
 * Registro: la API llama a `POST /banca/registro` de CP (correo, contraseña, DPI, fecha de nacimiento, nombre). Si CP rechaza, no se crea nada.
 * Login: siempre `POST /banca/auth/login` de CP. Sirve igual para clientes creados desde la app de Banca o desde el panel de CP (agencia).
-* Ficha local: tras un login/registro correcto se crea (si no existe) una **ficha local sin contraseña** (`password_hash = '!cp-gestiones'`) + cuenta de ahorro. Existe solo porque cuentas, movimientos, transferencias y solicitudes de este sistema se enlazan a un cliente local. Cualquier contraseña local antigua se borra en el siguiente login.
+* Ficha local: tras un login/registro correcto se crea (si no existe) una **ficha local sin contraseña** (`password_hash = '!cp-gestiones'`), **sin cuenta**. Existe solo porque cuentas, movimientos, transferencias y solicitudes de este sistema se enlazan a un cliente local. Cualquier contraseña local antigua se borra en el siguiente login.
 * Solo el ADMIN de BancaVirtual entra con contraseña local. 2FA (TOTP) y bloqueo por intentos son locales.
 * El DPI de la ficha se completa si CP lo devuelve o cuando el cliente lo escribe en una solicitud (se usa para identificarlo en CP).
 
@@ -63,6 +63,9 @@ Se emiten cuando la gestión de TARJETA_CREDITO se completa. El cliente puede bl
 
 ### 4.5b Notificaciones push (teléfono)
 Web Push + PWA. Cada aviso que se guarda en `notificaciones` también se envía como push a los dispositivos suscritos (`push_suscripciones`). La web (`public/sw.js`, `public/manifest.webmanifest`, tarjeta *Alertas en tu teléfono* en Seguridad) pide permiso y suscribe el dispositivo con la llave pública VAPID. Variables: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`. iPhone: solo si se instala la web en la pantalla de inicio (iOS ≥ 16.4). Suscripciones muertas (404/410) se borran solas.
+
+### 4.5d Cuentas (las abre CP, enlazadas por DPI)
+El cliente NO abre cuentas en la banca (`POST /cuentas` responde 403; sin botón en la web). El banco las abre en CP Gestiones (una AHORRO y una MONETARIA por DPI) y las registra con `POST /admin/cuentas` (X-Service-Key) enviando dpi, correo, tipo y número. Si el cliente aún no tiene ficha, se crea con ese correo/DPI. Sin cuentas, el inicio muestra "Aún no tienes cuentas". Contrato: `docs/API-ABONOS-PARA-CP.md`.
 
 ### 4.5c Abonos externos (planillas de CP)
 CP no tiene las cuentas del cliente: están aquí. Cuando CP paga una planilla debe llamar a `POST /admin/abonos` (X-Service-Key) con cuenta (o DPI), monto, concepto y una `referencia` única. La API acredita el saldo, crea el movimiento CREDITO, notifica (campanita + push) y es idempotente por `referencia` (tabla `abonos_externos`). Contrato: `docs/API-ABONOS-PARA-CP.md`.

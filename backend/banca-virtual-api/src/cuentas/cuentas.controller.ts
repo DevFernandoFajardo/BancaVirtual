@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { AuthUser } from '../auth/auth.schema';
 import { Auth, CurrentUser } from '../auth/jwt-auth.guard';
@@ -17,8 +17,9 @@ export class CuentasController {
   }
 
   @Post()
-  abrir(@CurrentUser() user: AuthUser, @Body() dto: AbrirCuentaDto) {
-    return this.cuentas.abrir(user.sub, dto.tipo, dto.alias);
+  abrir(@CurrentUser() _user: AuthUser, @Body() _dto: AbrirCuentaDto) {
+    // Las cuentas (una de ahorro y una monetaria por DPI) se abren en el banco, en CP Gestiones; el cliente no las abre desde la app
+    throw new ForbiddenException('La apertura de cuentas se realiza en el banco (CP Gestiones).');
   }
 
   @Post('plazo-fijo')

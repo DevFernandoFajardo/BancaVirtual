@@ -16,7 +16,7 @@ import { PLAZOS_FIJO, interesPlazo } from '@/lib/plazos';
 import { cuentasService } from '@/services/cuentas/cuentas.service';
 import { estadoCuentaService } from '@/services/banca.service';
 
-type Panel = 'cuenta' | 'plazo' | null;
+type Panel = 'plazo' | null;
 
 export default function DashboardPage() {
   const [cuentas, setCuentas] = useState<Cuenta[] | null>(null);
@@ -25,8 +25,6 @@ export default function DashboardPage() {
   const [panel, setPanel] = useState<Panel>(null);
   const [guardando, setGuardando] = useState(false);
 
-  const [tipo, setTipo] = useState<'MONETARIA' | 'AHORRO'>('MONETARIA');
-  const [alias, setAlias] = useState('');
 
   const [origenId, setOrigenId] = useState('');
   const [monto, setMonto] = useState('');
@@ -51,24 +49,6 @@ export default function DashboardPage() {
   const plazo = PLAZOS_FIJO.find((p) => p.meses === meses)!;
   const montoNum = Number(monto);
   const montoOk = montoNum >= 1000 && !!origen && montoNum <= Number(origen.saldo);
-
-  async function abrirCuenta(e: FormEvent) {
-    e.preventDefault();
-    setError('');
-    setOk('');
-    setGuardando(true);
-    try {
-      await cuentasService.abrir({ tipo, alias: alias.trim() || undefined });
-      setAlias('');
-      setPanel(null);
-      setOk('¡Cuenta abierta! Ya puedes usarla.');
-      await cargar();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setGuardando(false);
-    }
-  }
 
   async function constituirPlazo(e: FormEvent) {
     e.preventDefault();
@@ -126,34 +106,11 @@ export default function DashboardPage() {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-lg font-semibold">Mis cuentas</h2>
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => setPanel(panel === 'plazo' ? null : 'plazo')}>
+            <Button variant="secondary" onClick={() => setPanel(panel === 'plazo' ? null : 'plazo')} disabled={origenes.length === 0}>
               {panel === 'plazo' ? 'Cancelar' : 'Plazo fijo'}
-            </Button>
-            <Button variant="secondary" onClick={() => setPanel(panel === 'cuenta' ? null : 'cuenta')}>
-              {panel === 'cuenta' ? 'Cancelar' : 'Abrir otra cuenta'}
             </Button>
           </div>
         </div>
-
-        {panel === 'cuenta' && (
-          <Card className="mb-4">
-            <form onSubmit={abrirCuenta} className="grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-              <SelectField
-                label="Tipo de cuenta"
-                value={tipo}
-                onChange={(e) => setTipo(e.target.value as 'MONETARIA' | 'AHORRO')}
-                options={[
-                  { value: 'MONETARIA', label: 'Monetaria' },
-                  { value: 'AHORRO', label: 'Ahorro' },
-                ]}
-              />
-              <Field label="Nombre (opcional)" maxLength={40} value={alias} onChange={(e) => setAlias(e.target.value)} placeholder="Ej. Gastos del mes" />
-              <Button type="submit" loading={guardando}>
-                Abrir cuenta
-              </Button>
-            </form>
-          </Card>
-        )}
 
         {panel === 'plazo' && (
           <Card className="mb-4 space-y-4">
@@ -215,6 +172,12 @@ export default function DashboardPage() {
 
         <div className="grid gap-4 sm:grid-cols-2">
           {cuentas?.map((c) => <CuentaCard key={c.id} cuenta={c} />)}
+          {cuentas && cuentas.length === 0 && (
+            <Card className="sm:col-span-2 lg:col-span-3">
+              <p className="font-semibold">Aún no tienes cuentas</p>
+              <p className="mt-1 text-sm text-muted">Tus cuentas de ahorro y monetaria las abre el banco con tu DPI. Cuando estén listas aparecerán aquí automáticamente; si ya las solicitaste, vuelve a entrar en unos minutos.</p>
+            </Card>
+          )}
         </div>
         {(cuentas ?? []).some((c) => c.tipo === 'PLAZO_FIJO' && c.fechaVencimiento) && (
           <p className="mt-3 text-xs text-muted">

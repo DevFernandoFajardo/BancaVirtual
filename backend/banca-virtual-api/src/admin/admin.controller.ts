@@ -5,7 +5,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { Auth } from '../auth/jwt-auth.guard';
 import { ClientesService } from '../clientes/clientes.service';
 import { PaginacionDto } from '../common/pagination.schema';
-import { AbonoExternoDto } from '../cuentas/cuentas.schema';
+import { AbonoExternoDto, CuentaDesdeCpDto } from '../cuentas/cuentas.schema';
 import { CuentasService } from '../cuentas/cuentas.service';
 import { CambiarEstadoDto, FiltroSolicitudesDto } from '../solicitudes/solicitudes.schema';
 import { SolicitudesService } from '../solicitudes/solicitudes.service';
@@ -77,6 +77,13 @@ export class AdminController {
   @HttpCode(200)
   abonar(@Body() dto: AbonoExternoDto) {
     return this.cuentas.abonoExterno(dto);
+  }
+
+  /** CP Gestiones abrió una cuenta (ahorro o monetaria): se registra aquí enlazada al cliente por DPI. Idempotente. */
+  @Post('cuentas')
+  @HttpCode(200)
+  registrarCuenta(@Body() dto: CuentaDesdeCpDto) {
+    return this.cuentas.registrarDesdeCp(dto);
   }
 
   @Get('clientes')

@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min } from 'class-validator';
+import { IsEmail, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min } from 'class-validator';
 import { PaginacionDto } from '../common/pagination.schema';
 
 export type TipoCuenta = 'AHORRO' | 'MONETARIA' | 'PLAZO_FIJO';
@@ -154,4 +154,28 @@ export class AbonoExternoDto {
   @IsString()
   @MaxLength(40)
   origen?: string;
+}
+
+/** Cuenta que abre el banco en CP Gestiones; se enlaza al cliente por su DPI. */
+export class CuentaDesdeCpDto {
+  @Matches(/^\d{13}$/, { message: 'El DPI debe tener 13 dígitos' })
+  dpi: string;
+
+  /** Correo del cliente en CP (con el que inicia sesión): permite crear su ficha si aún no ha entrado a la banca */
+  @IsEmail()
+  @MaxLength(160)
+  correo: string;
+
+  @IsIn(['AHORRO', 'MONETARIA'])
+  tipo: 'AHORRO' | 'MONETARIA';
+
+  /** Número de cuenta que le asignó CP (6-12 dígitos). Si se omite, la banca genera uno */
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{6,12}$/, { message: 'Número de cuenta inválido (6-12 dígitos)' })
+  numero?: string;
+
+  @IsOptional() @IsString() @MaxLength(40) alias?: string;
+  @IsOptional() @IsString() @MaxLength(80) nombre?: string;
+  @IsOptional() @IsString() @MaxLength(80) apellido?: string;
 }

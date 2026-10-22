@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes, randomInt } from 'crypto';
-import { blindIndex } from '../common/crypto.util';
+import { blindIndex, encrypt } from '../common/crypto.util';
 import { fromCents, toCents } from '../common/money.util';
 import { DatabaseService, Queryable } from '../database/database.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
@@ -16,6 +16,7 @@ import {
   CUENTA_COLS,
   Cuenta,
   AbonoExternoDto,
+  CuentaDesdeCpDto,
   FiltroMovimientosDto,
   MOVIMIENTO_COLS,
   Movimiento,
@@ -358,5 +359,49 @@ export class CuentasService {
       `/cuentas/${r.cuenta.id}`,
     );
     return { ok: true, duplicado: false, referencia: dto.referencia, cuenta: r.cuenta.numero, monto: dto.monto, saldoDespues: Number(r.saldoNuevo) };
+  }
+
+  /**
+   * El banco abrió una cuenta en CP Gestiones: se registra aquí enlazada al cliente por DPI (una de ahorro y una monetaria por DPI).
+   * Si el cliente aún no ha entrado a la banca, se crea su ficha (sin contraseña) con el correo y DPI; al iniciar sesión la encuentra.
+   * Idempotente: si ya tiene cuenta de ese tipo, la devuelve.
+   */
+  async registrarDesdeCp(dto: CuentaDesdeCpDto) {
+    const correo = dto.correo.toLowerCase();
+    const dpiHash = blindIndex(dto.dpi);
+    const r = await this.db.transaction(async (tx) => {
+      let ficha = await this.db.one<{ id: string; dpiHash: string | null }>(
+        `SELECT id, dpi_hash AS "dpiHash" FROM clientes WHERE rol = 'CLIENTE' AND (dpi_hash = $1 OR email = $2) ORDER BY (dpi_hash = $1) DESC LIMIT 1`,
+        [dpiHash, correo],
+        tx,
+      );
+      if (ficha && ficha.dpiHash && ficha.dpiHash !== dpiHash) throw new ConflictException('El correo ya pertenece a otro cliente con distinto DPI');
+      if (!ficha) {
+        ficha = await this.db.one<{ id: string; dpiHash: string | null }>(
+          `INSERT INTO clientes (email, password_hash, rol, primer_nombre, primer_apellido, dpi_cifrado, dpi_hash)
+           VALUES ($1, '!cp-gestiones', 'CLIENTE', $2, $3, $4, $5) RETURNING id, dpi_hash AS "dpiHash"`,
+          [correo, (dto.nombre ?? 'Cliente').slice(0, 80), (dto.apellido ?? '-').slice(0, 80), encrypt(dto.dpi), dpiHash],
+          tx,
+        );
+      } else if (!ficha.dpiHash) {
+        await tx.query('UPDATE clientes SET dpi_cifrado = $2, dpi_hash = $3 WHERE id = $1', [ficha.id, encrypt(dto.dpi), dpiHash]);
+      }
+      const ya = await this.db.one<Cuenta>(`SELECT ${CUENTA_COLS} FROM cuentas WHERE cliente_id = $1 AND tipo = $2 AND estado <> 'CERRADA' LIMIT 1`, [ficha!.id, dto.tipo], tx);
+      if (ya) return { cuenta: ya, nueva: false };
+      if (dto.numero && (await this.db.one('SELECT 1 FROM cuentas WHERE numero = $1', [dto.numero], tx))) {
+        throw new ConflictException('Ese número de cuenta ya existe');
+      }
+      const numero = dto.numero ?? (await this.generarNumero(dto.tipo, tx));
+      const cuenta = await this.db.one<Cuenta>(
+        `INSERT INTO cuentas (numero, tipo, alias, cliente_id) VALUES ($1, $2, $3, $4) RETURNING ${CUENTA_COLS}`,
+        [numero, dto.tipo, dto.alias ?? (dto.tipo === 'AHORRO' ? 'Cuenta de ahorro' : 'Cuenta monetaria'), ficha!.id],
+        tx,
+      );
+      return { cuenta: cuenta!, nueva: true };
+    });
+    if (r.nueva) {
+      await this.notificaciones.crear(r.cuenta.clienteId, 'MOVIMIENTO', 'Nueva cuenta disponible', `El banco abrió tu ${dto.tipo === 'AHORRO' ? 'cuenta de ahorro' : 'cuenta monetaria'} ${r.cuenta.numero}.`, `/cuentas/${r.cuenta.id}`);
+    }
+    return { ok: true, creada: r.nueva, cuenta: { id: r.cuenta.id, numero: r.cuenta.numero, tipo: r.cuenta.tipo, saldo: Number(r.cuenta.saldo) } };
   }
 }

@@ -27,3 +27,32 @@ $h = @{ "X-Service-Key" = "LA_LLAVE" }
 $b = '{"cuentaNumero":"1234567890","monto":10,"concepto":"Prueba planilla","referencia":"PRUEBA-0001"}'
 Invoke-RestMethod -Method Post -Uri "https://bancavirtual-kp9z.onrender.com/api/v1/admin/abonos" -Headers $h -ContentType "application/json" -Body $b
 ```
+
+---
+
+# Cuentas: CP las abre y las registra en BancaVirtual (enlace por DPI)
+
+BancaVirtual **ya no crea cuentas** (ni al registrarse ni desde la app). Cuando CP abre una cuenta de ahorro o monetaria, debe registrarla aquí:
+
+`POST https://bancavirtual-kp9z.onrender.com/api/v1/admin/cuentas`  (cabecera `X-Service-Key`)
+
+```json
+{
+  "dpi": "1234567890123",
+  "correo": "cliente@correo.com",
+  "tipo": "AHORRO",
+  "numero": "2123456789",
+  "alias": "Cuenta de ahorro",
+  "nombre": "Ana",
+  "apellido": "López"
+}
+```
+* `tipo`: `AHORRO` o `MONETARIA`. Un cliente (DPI) tiene como máximo una de cada tipo.
+* `numero`: el número que CP le asignó (6-12 dígitos). Si se omite, BancaVirtual genera uno.
+* `correo`: el correo con el que el cliente inicia sesión. Si el cliente aún no ha entrado a la banca, se crea su ficha con ese correo y DPI, y al iniciar sesión ya ve sus cuentas.
+* `nombre`/`apellido`: opcionales.
+* Idempotente: si ya existe una cuenta de ese tipo para el DPI, responde la existente (`"creada": false`).
+* Respuesta 200: `{ "ok": true, "creada": true, "cuenta": { "id": "...", "numero": "2123456789", "tipo": "AHORRO", "saldo": 0 } }`
+* Errores: 409 número ya existe o correo de otro DPI · 400 datos inválidos · 401 llave incorrecta.
+
+Orden recomendado para CP: abrir la cuenta → `POST /admin/cuentas` → (para planillas/depósitos) `POST /admin/abonos` con ese `cuentaNumero`.
