@@ -124,7 +124,7 @@ export class CpGestionesService {
       dpi,
       version,
       estado: 'aceptada',
-      nota: 'Aceptada por el cliente en Banca Virtual',
+      nota: 'Aceptada por el cliente en CP BancaVirtual',
       referencia_aceptacion: `consent-${gestionRef}`,
     });
   }

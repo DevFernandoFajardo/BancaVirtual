@@ -27,7 +27,7 @@ async function bootstrap() {
 
   if (process.env.SWAGGER_ENABLED !== 'false') {
     const doc = new DocumentBuilder()
-      .setTitle('Banca Virtual API')
+      .setTitle('CP BancaVirtual API')
       .setDescription('API de la banca virtual. Consume el motor de evaluaciones CreditPulse (CORE).')
       .setVersion('0.1.0')
       .addBearerAuth()

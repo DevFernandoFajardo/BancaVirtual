@@ -1,6 +1,6 @@
 {
-  "name": "BancaVirtual",
-  "short_name": "BancaVirtual",
+  "name": "CP BancaVirtual",
+  "short_name": "CP BancaVirtual",
   "description": "Tu banca en línea: cuentas, pagos, préstamos y alertas.",
   "start_url": "/dashboard",
   "scope": "/",

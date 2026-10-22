@@ -115,9 +115,9 @@ export default function LoginPage() {
         <div aria-hidden className="pointer-events-none absolute -right-[8%] top-[34%] h-[95%] w-[70%] rounded-full border border-white/[0.04] bg-black/[0.12]" />
 
         <div className="relative flex items-center gap-3">
-          <img src="/logo.svg" alt="BancaVirtual" width={44} height={44} className="h-11 w-11 rounded-xl shadow-[0_6px_18px_-6px_rgba(63,149,204,0.7)]" />
+          <img src="/logo.svg" alt="CP BancaVirtual" width={44} height={44} className="h-11 w-11 rounded-xl shadow-[0_6px_18px_-6px_rgba(63,149,204,0.7)]" />
           <div>
-            <p className="text-[1.02rem] font-extrabold uppercase leading-tight tracking-wide text-white">BancaVirtual</p>
+            <p className="text-[1.02rem] font-extrabold uppercase leading-tight tracking-wide text-white">CP BancaVirtual</p>
             <p className="text-[.62rem] uppercase tracking-[0.28em] text-[#7f8fb4]">Banca en línea</p>
           </div>
         </div>

@@ -33,7 +33,7 @@ export class SolicitudesService {
     private readonly prestamos: PrestamosService,
     config: ConfigService,
   ) {
-    const n = Number(config.get('EVALUACION_DEMORA_SEGUNDOS') ?? 20);
+    const n = Number(config.get('EVALUACION_ESPERA_SEGUNDOS') ?? 20);
     this.demoraSegundos = Number.isFinite(n) && n >= 0 ? Math.floor(n) : 20;
   }
 
@@ -72,6 +72,10 @@ export class SolicitudesService {
     // Si la ficha local aún no tiene DPI (cliente creado en CP), se completa con el que escribió aquí (se usa para identificarlo en CP)
     await this.db
       .query('UPDATE clientes SET dpi_cifrado = $2, dpi_hash = $3 WHERE id = $1 AND dpi_hash IS NULL', [clienteId, encrypt(dto.dpi), blindIndex(dto.dpi)])
+      .catch(() => undefined);
+    // Igual con la fecha de nacimiento: CP la exige para registrar la gestión
+    await this.db
+      .query('UPDATE clientes SET fecha_nacimiento = $2 WHERE id = $1 AND fecha_nacimiento IS NULL', [clienteId, dto.fechaNacimiento])
       .catch(() => undefined);
     const politicas = [...(evaluacion.Politicas ?? [])].sort((a, b) => a.Orden - b.Orden);
 

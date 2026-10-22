@@ -26,7 +26,7 @@ function encabezado(doc: import('jspdf').jsPDF, titulo: string, subtitulo: strin
   doc.setFontSize(13);
   doc.text('BV', 59, 46, { align: 'center' });
   doc.setFontSize(16);
-  doc.text('BancaVirtual', 90, 36);
+  doc.text('CP BancaVirtual', 90, 36);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9.5);
   doc.setTextColor(170, 182, 210);
@@ -48,7 +48,7 @@ function pie(doc: import('jspdf').jsPDF) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(...GRIS);
-    doc.text('Documento generado electronicamente por BancaVirtual. Proyecto academico: no tiene validez bancaria real.', 40, h - 30);
+    doc.text('Documento generado electronicamente por CP BancaVirtual. Proyecto academico: no tiene validez bancaria real.', 40, h - 30);
     doc.text(`Pagina ${i} de ${n}`, w - 40, h - 30, { align: 'right' });
   }
 }

@@ -42,7 +42,7 @@ Las credenciales viven **solo en CP Gestiones** (colección `clientes` de su Mon
 
 ### 4.2 Solicitar un producto (Productos → Gestiones en línea)
 1. El cliente llena el formulario (créditos piden **monto y plazo en cuotas**; la tarjeta no pide monto: el banco asigna el límite).
-2. La API evalúa en el CORE y guarda la solicitud `EN_EVALUACION` (espera de demostración `EVALUACION_DEMORA_SEGUNDOS`).
+2. La API evalúa en el CORE y guarda la solicitud `EN_EVALUACION` (espera de demostración `EVALUACION_ESPERA_SEGUNDOS`).
 3. Resultado: ROJO → `RECHAZADA_POR_POLITICAS`; si no → `PENDIENTE_DECISION_CLIENTE` y el cliente acepta o rechaza.
 4. Al aceptar (`ACEPTADA`) la API registra la gestión en CP (y el perfil si no existe). La pantalla consulta CP cada ~15 s: `aprobada` → registra la aceptación; `emitida` → `EMITIDA`; `cancelada/rechazada` → `CANCELADA`.
 5. **Varios productos:** el cliente puede tener varios productos a la vez y volver a pedir uno cuando el anterior ya fue completado. Solo se bloquea otra solicitud del *mismo* producto mientras haya una en curso (`EN_EVALUACION`, `PENDIENTE_DECISION_CLIENTE`, `ACEPTADA`) — índice único `ux_solicitud_vigente`.
@@ -78,7 +78,7 @@ Mapa Leaflet (OpenStreetMap/CARTO/Esri) con puntos de ejemplo (`src/lib/agencias
 Tablas: clientes, cuentas, movimientos, transferencias, beneficiarios, transferencias_programadas, sesiones, notificaciones, solicitudes (+cp_gestion_id, cp_estado, cp_error, monto_solicitado, plazo_meses), tarjetas (+cp_tarjeta_id, bloqueo_origen), tarjeta_movimientos, servicios_pago, pagos_servicios (+estado, autorizacion, proveedor), **prestamos**, **prestamo_cuotas**.
 
 ## 6. Variables de entorno (Render)
-`DB_*`, `JWT_SECRET`, `ENCRYPTION_KEY`, `SERVICE_API_KEY`, `CORE_BASE_URL`, `CORE_API_KEY`, `CP_GESTIONES_TOKEN` (+`CP_GESTIONES_BASE_URL`), `SERVICIOS_API_URL`, `SERVICIOS_API_KEY`, `SERVICIOS_API_NOMBRE`, `SERVICIOS_API_TIMEOUT_MS`, `EVALUACION_DEMORA_SEGUNDOS`, `ALLOW_DEMO_DEPOSITS`, `CORS_ORIGINS`, `SEED_ADMIN_*`. Web (Vercel): `NEXT_PUBLIC_API_URL`.
+`DB_*`, `JWT_SECRET`, `ENCRYPTION_KEY`, `SERVICE_API_KEY`, `CORE_BASE_URL`, `CORE_API_KEY`, `CP_GESTIONES_TOKEN` (+`CP_GESTIONES_BASE_URL`), `SERVICIOS_API_URL`, `SERVICIOS_API_KEY`, `SERVICIOS_API_NOMBRE`, `SERVICIOS_API_TIMEOUT_MS`, `EVALUACION_ESPERA_SEGUNDOS`, `ALLOW_DEMO_DEPOSITS`, `CORS_ORIGINS`, `SEED_ADMIN_*`. Web (Vercel): `NEXT_PUBLIC_API_URL`.
 
 ## 7. Reglas y decisiones
 * Dinero siempre en centavos enteros en el backend; transacciones con `FOR UPDATE` para saldos.

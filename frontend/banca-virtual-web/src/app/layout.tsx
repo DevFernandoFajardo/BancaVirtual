@@ -3,11 +3,11 @@ import type { ReactNode } from 'react';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'BancaVirtual',
+  title: 'CP BancaVirtual',
   description: 'Banca virtual · Proyecto final de Análisis de Sistemas II',
   manifest: '/manifest.webmanifest',
   icons: { icon: [{ url: '/logo.svg', type: 'image/svg+xml' }, { url: '/icon-192.png' }], apple: '/apple-touch-icon.png' },
-  appleWebApp: { capable: true, title: 'BancaVirtual', statusBarStyle: 'black-translucent' },
+  appleWebApp: { capable: true, title: 'CP BancaVirtual', statusBarStyle: 'black-translucent' },
 };
 
 export const viewport: Viewport = {

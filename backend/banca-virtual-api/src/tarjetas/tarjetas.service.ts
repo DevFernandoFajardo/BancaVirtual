@@ -156,7 +156,7 @@ export class TarjetasService {
       await this.cp.patch(`/tarjetas/${encodeURIComponent(r.cpId)}/estado`, {
         dpi: cliente.dpi,
         estado: bloquear ? 'bloqueada' : 'activa',
-        nota: bloquear ? 'Bloqueo solicitado por el cliente en Banca Virtual' : 'Desbloqueo solicitado por el cliente en Banca Virtual',
+        nota: bloquear ? 'Bloqueo solicitado por el cliente en CP BancaVirtual' : 'Desbloqueo solicitado por el cliente en CP BancaVirtual',
       });
     } catch (err: any) {
       this.logger.warn(`No se pudo aplicar el estado de la tarjeta en CP Gestiones: ${err?.message}`);

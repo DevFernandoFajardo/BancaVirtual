@@ -142,7 +142,7 @@ export default function TarjetasPage() {
               <div className="absolute -bottom-16 left-10 h-52 w-52 rounded-full bg-white/[0.07]" />
               <div className="relative flex h-full flex-col justify-between">
                 <div className="flex items-start justify-between">
-                  <span className="text-sm font-bold tracking-wide">BancaVirtual</span>
+                  <span className="text-sm font-bold tracking-wide">CP BancaVirtual</span>
                   <span className="text-xs font-semibold opacity-90">{t.productoNombre}</span>
                 </div>
                 <div>

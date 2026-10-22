@@ -1,4 +1,4 @@
-/* Service worker de BancaVirtual: recibe notificaciones push y las muestra en el teléfono. */
+/* Service worker de CP BancaVirtual: recibe notificaciones push y las muestra en el teléfono. */
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 
@@ -10,7 +10,7 @@ self.addEventListener('push', (event) => {
     d = { cuerpo: event.data ? event.data.text() : '' };
   }
   event.waitUntil(
-    self.registration.showNotification(d.titulo || 'BancaVirtual', {
+    self.registration.showNotification(d.titulo || 'CP BancaVirtual', {
       body: d.cuerpo || '',
       icon: '/icon-192.png',
       badge: '/icon-192.png',

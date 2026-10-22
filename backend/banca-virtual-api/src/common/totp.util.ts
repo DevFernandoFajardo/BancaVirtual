@@ -44,6 +44,6 @@ export function codigoTotp(secreto: string, ahora = Date.now()): string {
   return hotp(secreto, Math.floor(ahora / 30_000));
 }
 
-export function otpauthUrl(secreto: string, cuenta: string, emisor = 'BancaVirtual'): string {
+export function otpauthUrl(secreto: string, cuenta: string, emisor = 'CP BancaVirtual'): string {
   return `otpauth://totp/${encodeURIComponent(emisor)}:${encodeURIComponent(cuenta)}?secret=${secreto}&issuer=${encodeURIComponent(emisor)}&algorithm=SHA1&digits=6&period=30`;
 }
