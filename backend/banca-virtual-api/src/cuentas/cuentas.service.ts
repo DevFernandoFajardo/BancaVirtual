@@ -7,13 +7,15 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomInt } from 'crypto';
+import { randomBytes, randomInt } from 'crypto';
+import { blindIndex } from '../common/crypto.util';
 import { fromCents, toCents } from '../common/money.util';
 import { DatabaseService, Queryable } from '../database/database.service';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import {
   CUENTA_COLS,
   Cuenta,
+  AbonoExternoDto,
   FiltroMovimientosDto,
   MOVIMIENTO_COLS,
   Movimiento,
@@ -301,5 +303,60 @@ export class CuentasService {
       '/dashboard',
     );
     return resultado;
+  }
+
+  /**
+   * Acredita un abono enviado por un sistema externo (planillas de CP Gestiones): suma al saldo, registra el movimiento
+   * y avisa al cliente (campanita + push). Idempotente por `referencia`.
+   */
+  async abonoExterno(dto: AbonoExternoDto) {
+    if (!dto.cuentaNumero && !dto.dpi) throw new BadRequestException('Indica cuentaNumero o dpi');
+    const montoCents = toCents(dto.monto);
+    const origen = (dto.origen ?? 'CP-GESTIONES').slice(0, 40);
+
+    const r = await this.db.transaction(async (tx) => {
+      let cuentaId: string | undefined;
+      if (dto.cuentaNumero) {
+        cuentaId = (await this.db.one<{ id: string }>('SELECT id FROM cuentas WHERE numero = $1', [dto.cuentaNumero], tx))?.id;
+      } else {
+        cuentaId = (
+          await this.db.one<{ id: string }>(
+            `SELECT c.id FROM cuentas c JOIN clientes k ON k.id = c.cliente_id
+              WHERE k.dpi_hash = $1 AND c.tipo = $2 AND c.estado = 'ACTIVA' ORDER BY c.created_at LIMIT 1`,
+            [blindIndex(dto.dpi!), dto.tipoCuenta ?? 'AHORRO'],
+            tx,
+          )
+        )?.id;
+      }
+      const cuenta = cuentaId ? await this.db.one<Cuenta>(`SELECT ${CUENTA_COLS} FROM cuentas WHERE id = $1 FOR UPDATE`, [cuentaId], tx) : null;
+      if (!cuenta) throw new NotFoundException('Cuenta no encontrada');
+      if (cuenta.estado !== 'ACTIVA' || cuenta.tipo === 'PLAZO_FIJO') {
+        throw new UnprocessableEntityException('La cuenta no puede recibir abonos (debe ser ahorro o monetaria activa)');
+      }
+      const nuevo = await this.db.one<{ referencia: string }>(
+        `INSERT INTO abonos_externos (referencia, origen, cuenta_id, monto, concepto) VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (referencia) DO NOTHING RETURNING referencia`,
+        [dto.referencia, origen, cuenta.id, fromCents(montoCents), dto.concepto],
+        tx,
+      );
+      if (!nuevo) return { duplicado: true as const, cuenta };
+      const saldoNuevo = fromCents(toCents(cuenta.saldo) + montoCents);
+      await tx.query('UPDATE cuentas SET saldo = $1 WHERE id = $2', [saldoNuevo, cuenta.id]);
+      await tx.query(
+        `INSERT INTO movimientos (cuenta_id, tipo, monto, saldo_posterior, descripcion, referencia) VALUES ($1, 'CREDITO', $2, $3, $4, $5)`,
+        [cuenta.id, fromCents(montoCents), saldoNuevo, dto.concepto.slice(0, 140), 'ABO-' + randomBytes(6).toString('hex').toUpperCase()],
+      );
+      return { duplicado: false as const, cuenta, saldoNuevo };
+    });
+
+    if (r.duplicado) return { ok: true, duplicado: true, referencia: dto.referencia, cuenta: r.cuenta.numero };
+    await this.notificaciones.crear(
+      r.cuenta.clienteId,
+      'MOVIMIENTO',
+      'Recibiste un depósito',
+      `Q${dto.monto.toFixed(2)} en tu cuenta ${r.cuenta.numero}: ${dto.concepto}.`,
+      `/cuentas/${r.cuenta.id}`,
+    );
+    return { ok: true, duplicado: false, referencia: dto.referencia, cuenta: r.cuenta.numero, monto: dto.monto, saldoDespues: Number(r.saldoNuevo) };
   }
 }

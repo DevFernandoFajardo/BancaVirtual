@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { ApiTags } from '@nestjs/swagger';
 import { Auth } from '../auth/jwt-auth.guard';
 import { ClientesService } from '../clientes/clientes.service';
 import { PaginacionDto } from '../common/pagination.schema';
+import { AbonoExternoDto } from '../cuentas/cuentas.schema';
 import { CuentasService } from '../cuentas/cuentas.service';
 import { CambiarEstadoDto, FiltroSolicitudesDto } from '../solicitudes/solicitudes.schema';
 import { SolicitudesService } from '../solicitudes/solicitudes.service';
@@ -66,6 +67,16 @@ export class AdminController {
   @Post('notificaciones')
   enviarMensaje(@Body() dto: MensajeBancoDto) {
     return this.notificaciones.enviarDelBanco(dto.titulo, dto.mensaje, dto.clienteId);
+  }
+
+  /**
+   * Abono desde un sistema externo (p. ej. CP Gestiones al pagar una planilla). Header `X-Service-Key`.
+   * Idempotente por `referencia`: si CP reenvía el mismo pago, no se acredita dos veces.
+   */
+  @Post('abonos')
+  @HttpCode(200)
+  abonar(@Body() dto: AbonoExternoDto) {
+    return this.cuentas.abonoExterno(dto);
   }
 
   @Get('clientes')

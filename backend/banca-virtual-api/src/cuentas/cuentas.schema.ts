@@ -116,3 +116,42 @@ export class LiquidarPlazoDto {
   @IsUUID()
   cuentaDestinoId: string;
 }
+
+/** Abono que envía un sistema externo (p. ej. CP Gestiones al pagar una planilla). */
+export class AbonoExternoDto {
+  /** Número de cuenta destino (ahorro o monetaria). Si se omite, se usa `dpi` */
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{6,12}$/, { message: 'Número de cuenta inválido' })
+  cuentaNumero?: string;
+
+  /** Alternativa al número de cuenta: DPI del cliente (se abona a su cuenta `tipoCuenta`, por omisión ahorro) */
+  @IsOptional()
+  @Matches(/^\d{13}$/, { message: 'El DPI debe tener 13 dígitos' })
+  dpi?: string;
+
+  @IsOptional()
+  @IsIn(['AHORRO', 'MONETARIA'])
+  tipoCuenta?: 'AHORRO' | 'MONETARIA';
+
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  @Max(10_000_000)
+  monto: number;
+
+  /** Ej.: "Pago de planilla Octubre 2026 · Empresa X" */
+  @IsString()
+  @MaxLength(100)
+  concepto: string;
+
+  /** Id único del pago en el sistema externo (idempotencia: reenviarlo no vuelve a acreditar) */
+  @IsString()
+  @Matches(/^[A-Za-z0-9_.:\-]{6,64}$/, { message: 'referencia inválida (6-64 caracteres)' })
+  referencia: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  origen?: string;
+}

@@ -64,11 +64,14 @@ Se emiten cuando la gestión de TARJETA_CREDITO se completa. El cliente puede bl
 ### 4.5b Notificaciones push (teléfono)
 Web Push + PWA. Cada aviso que se guarda en `notificaciones` también se envía como push a los dispositivos suscritos (`push_suscripciones`). La web (`public/sw.js`, `public/manifest.webmanifest`, tarjeta *Alertas en tu teléfono* en Seguridad) pide permiso y suscribe el dispositivo con la llave pública VAPID. Variables: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`. iPhone: solo si se instala la web en la pantalla de inicio (iOS ≥ 16.4). Suscripciones muertas (404/410) se borran solas.
 
+### 4.5c Abonos externos (planillas de CP)
+CP no tiene las cuentas del cliente: están aquí. Cuando CP paga una planilla debe llamar a `POST /admin/abonos` (X-Service-Key) con cuenta (o DPI), monto, concepto y una `referencia` única. La API acredita el saldo, crea el movimiento CREDITO, notifica (campanita + push) y es idempotente por `referencia` (tabla `abonos_externos`). Contrato: `docs/API-ABONOS-PARA-CP.md`.
+
 ### 4.6 Agencias y cajeros
 Mapa Leaflet (OpenStreetMap/CARTO/Esri) con puntos de ejemplo (`src/lib/agencias.ts`): agrupación de pines con contador, filtros (agencias/cajeros, *Abierto ahora*, servicio), búsqueda, ubicación del usuario, *Ir al más cercano*, **ruta dibujada en el mapa** (auto/a pie, vía routing.openstreetmap.de) con distancia y tiempo, horarios con abierto/cerrado, y enlace a Google/Apple Maps.
 
 ## 5. Base de datos (Neon / PostgreSQL) — ejecutar en orden
-`01_esquema` → `02_solicitudes_en_evaluacion` → `03_banca_completa` → `04_cp_gestiones` → `05_prestamos_servicios` → `06_push` (todos idempotentes salvo 00 y 99).
+`01_esquema` → `02_solicitudes_en_evaluacion` → `03_banca_completa` → `04_cp_gestiones` → `05_prestamos_servicios` → `06_push` → `07_abonos_externos` (todos idempotentes salvo 00 y 99).
 Tablas: clientes, cuentas, movimientos, transferencias, beneficiarios, transferencias_programadas, sesiones, notificaciones, solicitudes (+cp_gestion_id, cp_estado, cp_error, monto_solicitado, plazo_meses), tarjetas (+cp_tarjeta_id, bloqueo_origen), tarjeta_movimientos, servicios_pago, pagos_servicios (+estado, autorizacion, proveedor), **prestamos**, **prestamo_cuotas**.
 
 ## 6. Variables de entorno (Render)
