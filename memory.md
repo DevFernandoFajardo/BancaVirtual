@@ -32,9 +32,13 @@ App administrativa ───► /admin/* de la API (header X-Service-Key = SERVI
 | Pago de servicios | **API externa** (con modo simulado si no está configurada) |
 
 ## 4. Flujos clave
-### 4.1 Registro / Login
-Registro pide solo nombre, apellido, correo, contraseña, DPI y fecha de nacimiento. La API crea el cliente local (con cuenta de ahorro) y el perfil en CP en una sola transacción (si CP rechaza, se revierte).
-Login: la API valida las credenciales en CP; clientes locales antiguos se migran a CP al entrar. 2FA (TOTP) y bloqueo por intentos fallidos son locales.
+### 4.1 Registro / Login (100 % CP Gestiones)
+Las credenciales viven **solo en CP Gestiones** (colección `clientes` de su MongoDB). Aquí NO se guarda ninguna contraseña de clientes.
+* Registro: la API llama a `POST /banca/registro` de CP (correo, contraseña, DPI, fecha de nacimiento, nombre). Si CP rechaza, no se crea nada.
+* Login: siempre `POST /banca/auth/login` de CP. Sirve igual para clientes creados desde la app de Banca o desde el panel de CP (agencia).
+* Ficha local: tras un login/registro correcto se crea (si no existe) una **ficha local sin contraseña** (`password_hash = '!cp-gestiones'`) + cuenta de ahorro. Existe solo porque cuentas, movimientos, transferencias y solicitudes de este sistema se enlazan a un cliente local. Cualquier contraseña local antigua se borra en el siguiente login.
+* Solo el ADMIN de BancaVirtual entra con contraseña local. 2FA (TOTP) y bloqueo por intentos son locales.
+* El DPI de la ficha se completa si CP lo devuelve o cuando el cliente lo escribe en una solicitud (se usa para identificarlo en CP).
 
 ### 4.2 Solicitar un producto (Productos → Gestiones en línea)
 1. El cliente llena el formulario (créditos piden **monto y plazo en cuotas**; la tarjeta no pide monto: el banco asigna el límite).

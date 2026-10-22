@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { encrypt } from '../common/crypto.util';
+import { blindIndex, encrypt } from '../common/crypto.util';
 import { ClientesService } from '../clientes/clientes.service';
 import { CpGestionesService } from '../cp/cp-gestiones.service';
 import { CoreClient } from '../core/core.client';
@@ -69,6 +69,10 @@ export class SolicitudesService {
       `UPDATE clientes SET nit_cifrado = $2, ingresos_mensuales = $3, tipo_empleo = $4, antiguedad_laboral_meses = $5, updated_at = now() WHERE id = $1`,
       [clienteId, encrypt(dto.nit), dto.ingresosMensuales.toFixed(2), dto.tipoEmpleo, dto.antiguedadLaboralMeses],
     );
+    // Si la ficha local aún no tiene DPI (cliente creado en CP), se completa con el que escribió aquí (se usa para identificarlo en CP)
+    await this.db
+      .query('UPDATE clientes SET dpi_cifrado = $2, dpi_hash = $3 WHERE id = $1 AND dpi_hash IS NULL', [clienteId, encrypt(dto.dpi), blindIndex(dto.dpi)])
+      .catch(() => undefined);
     const politicas = [...(evaluacion.Politicas ?? [])].sort((a, b) => a.Orden - b.Orden);
 
     try {
