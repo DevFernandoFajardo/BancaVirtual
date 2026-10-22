@@ -109,31 +109,52 @@ function LoginForm() {
 export default function LoginPage() {
   return (
     <div className="grid min-h-dvh bg-navy-900 lg:grid-cols-[1.1fr_1fr]">
-      <section className="flex flex-col justify-center bg-[radial-gradient(circle_at_20%_20%,#16234a,#060a13_60%)] px-[30px] py-11 text-[#dfe6f5] lg:px-[58px] lg:py-[68px]">
-        <div className="flex items-center gap-[11px]">
-          <span className="grid h-[38px] w-[38px] place-items-center rounded-[10px] bg-brand-600 text-[.9rem] font-extrabold text-white shadow-[0_4px_14px_-4px_rgba(91,141,255,0.6)]">
-            BV
-          </span>
-          <span className="text-[1.15rem] font-extrabold tracking-tight text-white">BancaVirtual</span>
+      <section className="relative flex flex-col overflow-hidden bg-[radial-gradient(circle_at_15%_10%,#14213f,#0a1224_55%,#070d1a)] px-[30px] py-9 text-[#dfe6f5] lg:px-[64px] lg:py-12">
+        {/* Círculos decorativos */}
+        <div aria-hidden className="pointer-events-none absolute -right-[22%] top-[18%] h-[120%] w-[90%] rounded-full border border-white/[0.04] bg-white/[0.015]" />
+        <div aria-hidden className="pointer-events-none absolute -right-[8%] top-[34%] h-[95%] w-[70%] rounded-full border border-white/[0.04] bg-black/[0.12]" />
+
+        <div className="relative flex items-center gap-3">
+          <img src="/logo.svg" alt="BancaVirtual" width={44} height={44} className="h-11 w-11 rounded-xl shadow-[0_6px_18px_-6px_rgba(63,149,204,0.7)]" />
+          <div>
+            <p className="text-[1.02rem] font-extrabold uppercase leading-tight tracking-wide text-white">BancaVirtual</p>
+            <p className="text-[.62rem] uppercase tracking-[0.28em] text-[#7f8fb4]">Banca en línea</p>
+          </div>
         </div>
-        <h1 className="my-[30px] mb-4 text-[1.9rem] font-bold leading-tight text-white lg:text-[2.5rem]">
-          Tu banca, clara y segura,
-          <br />
-          en un solo lugar.
-        </h1>
-        <p className="max-w-[460px] text-[#aab6d1]">
-          Consulta tus cuentas, simula transferencias y solicita tarjetas y créditos. Cada solicitud se evalúa con el motor
-          CreditPulse y recibes un resultado claro: aprobada o no aprobada.
-        </p>
-        <div className="mt-[38px] hidden max-w-[360px] rounded-[15px] border border-white/[0.12] bg-white/[0.06] px-[22px] py-5 backdrop-blur-sm sm:block">
-          <p className="text-[.78rem] uppercase tracking-[0.06em] text-[#93a1c4]">Resultado de ejemplo</p>
-          <div className="mt-[11px] flex items-center justify-between">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-verde-bg px-3 py-[5px] text-[.82rem] font-bold text-verde">Aprobada</span>
-            <span className="text-[.9rem]">Tarjeta de Crédito</span>
-          </div>
-          <div className="mt-[15px] h-[7px] overflow-hidden rounded-full bg-white/[0.12]">
-            <div className="h-full w-4/5 rounded-full bg-verde" />
-          </div>
+
+        <div className="relative my-auto py-12 lg:py-16">
+          <p className="mb-6 flex items-center gap-2.5 text-[.68rem] font-bold uppercase tracking-[0.26em] text-[#5fb7e0]">
+            <span className="h-1.5 w-1.5 rounded-full bg-verde" />
+            Tu dinero, siempre a la mano
+          </p>
+          <h1 className="text-[2.6rem] font-light leading-[1.05] tracking-tight text-[#e9eefb] sm:text-[3.2rem] lg:text-[4rem]">
+            Fácil de usar.
+            <br />
+            Rápida y segura.
+            <br />
+            <span className="bg-gradient-to-r from-[#6f9bff] via-[#5fb7e0] to-[#7ee0c3] bg-clip-text font-normal text-transparent">Todo en un toque.</span>
+          </h1>
+          <p className="mt-7 max-w-[470px] text-[1.02rem] leading-relaxed text-[#8f9dc0]">
+            Consulta tus cuentas, transfiere en segundos, paga tus servicios y solicita tarjetas y préstamos desde cualquier lugar. Todo
+            protegido, sin filas y sin complicaciones.
+          </p>
+        </div>
+
+        <div className="relative grid grid-cols-3 items-start gap-4">
+          {[
+            ['M3 7h18M3 12h18M3 17h12', 'Transferencias', 'Al instante, 24/7'],
+            ['M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6l8-3zM9 12l2.2 2.2L15.5 10', 'Seguridad', 'Protección en cada paso'],
+            ['M5 13l4 4L19 7', 'Solicitudes', 'Resultado claro y rápido'],
+          ].map(([d, t, sub]) => (
+            <div key={t} className="min-w-0">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#7fb4e6" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d={d} />
+              </svg>
+              <div className="mt-3 h-px w-full bg-gradient-to-r from-[#5fb7e0]/50 to-transparent" />
+              <p className="mt-2.5 text-[.8rem] font-semibold text-white">{t}</p>
+              <p className="text-[.68rem] leading-snug text-[#6f7fa6]">{sub}</p>
+            </div>
+          ))}
         </div>
       </section>
 

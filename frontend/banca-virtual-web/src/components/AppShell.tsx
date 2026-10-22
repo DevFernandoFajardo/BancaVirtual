@@ -106,9 +106,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         className={`fixed inset-y-0 left-0 z-50 flex w-[280px] flex-col overflow-y-auto border-r border-white/[0.08] bg-gradient-to-b from-navy-900 to-navy-800 px-[18px] py-6 text-[#cfd8ea] transition-transform duration-300 lg:sticky lg:top-0 lg:h-dvh lg:w-auto lg:translate-x-0 ${abierto ? 'translate-x-0 shadow-[10px_0_32px_rgba(0,0,0,0.5)]' : '-translate-x-full'}`}
       >
         <Link href="/dashboard" className="flex items-center gap-[11px] px-2 pb-[26px] pt-1">
-          <span className="grid h-[38px] w-[38px] place-items-center rounded-[10px] bg-brand-600 text-[.9rem] font-extrabold text-white shadow-[0_4px_14px_-4px_rgba(91,141,255,0.6)]">
-            BV
-          </span>
+          <img src="/logo.svg" alt="BancaVirtual" width={38} height={38} className="h-[38px] w-[38px] rounded-[10px] shadow-[0_4px_14px_-4px_rgba(63,149,204,0.6)]" />
           <span className="text-[1.15rem] font-extrabold tracking-tight text-white">BancaVirtual</span>
         </Link>
 

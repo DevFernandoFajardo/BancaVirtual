@@ -53,7 +53,7 @@ export default function RegistroPage() {
     <div className="grid min-h-dvh place-items-center px-4 py-10">
       <Card className="w-full max-w-xl rounded-[20px] p-6 sm:px-10 sm:py-[42px]">
         <div className="mb-5 flex items-center gap-[11px]">
-          <span className="grid h-[38px] w-[38px] place-items-center rounded-[10px] bg-brand-600 text-[.9rem] font-extrabold text-white shadow-[0_4px_14px_-4px_rgba(91,141,255,0.6)]">BV</span>
+          <img src="/logo.svg" alt="BancaVirtual" width={38} height={38} className="h-[38px] w-[38px] rounded-[10px] shadow-[0_4px_14px_-4px_rgba(63,149,204,0.6)]" />
           <span className="text-[1.15rem] font-extrabold tracking-tight">BancaVirtual</span>
         </div>
         <p className="text-[.78rem] font-extrabold uppercase tracking-[0.08em] text-brand-600">Registro</p>
