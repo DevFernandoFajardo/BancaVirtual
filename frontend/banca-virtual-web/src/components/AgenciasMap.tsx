@@ -387,7 +387,7 @@ export default function AgenciasMap() {
 
   return (
     <div ref={marco} className={`bv-mapa ${tema === 'oscuro' && capa === 'mapa' ? 'bv-mapa--oscuro' : ''} relative isolate h-[calc(100dvh-150px)] min-h-[520px] lg:h-[calc(100dvh-210px)] lg:min-h-[560px] overflow-hidden rounded-2xl border border-line shadow-card`}>
-      <div ref={contenedor} className="absolute inset-0 z-0 bg-input" role="application" aria-label="Mapa de agencias y cajeros" />
+      <div ref={contenedor} style={{ position: 'absolute', inset: 0 }} className="z-0 bg-input" role="application" aria-label="Mapa de agencias y cajeros" />
 
       {/* Controles flotantes (arriba a la derecha) */}
       <div className="absolute right-3 top-3 z-[500] flex flex-col gap-2">
