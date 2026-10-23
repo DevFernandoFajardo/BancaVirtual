@@ -41,6 +41,7 @@ const GRUPOS = [
   {
     etiqueta: 'Herramientas',
     links: [
+      { href: '/reportes', label: 'Mis reportes', Icon: ClipboardIcon },
       { href: '/prestamos', label: 'Préstamos', Icon: CalcIcon },
       { href: '/tipo-cambio', label: 'Tipo de cambio', Icon: ExchangeIcon },
       { href: '/agencias', label: 'Agencias y cajeros', Icon: PinIcon },
@@ -63,6 +64,7 @@ const TITULOS: { prefijo: string; titulo: string; subtitulo: string }[] = [
   { prefijo: '/tarjetas', titulo: 'Mis tarjetas', subtitulo: 'Límite, saldo, bloqueo y pagos de tus tarjetas.' },
   { prefijo: '/gestiones', titulo: 'Gestiones en línea', subtitulo: 'Da seguimiento a tus solicitudes y trámites paso a paso.' },
   { prefijo: '/productos', titulo: 'Productos', subtitulo: 'Solicita tarjetas y créditos y conoce el resultado de tu evaluación.' },
+  { prefijo: '/reportes', titulo: 'Mis reportes', subtitulo: 'Descarga en PDF tus estados de cuenta, gestiones y transferencias.' },
   { prefijo: '/prestamos', titulo: 'Préstamos', subtitulo: 'Paga tus cuotas y simula nuevos créditos.' },
   { prefijo: '/tipo-cambio', titulo: 'Tipo de cambio', subtitulo: 'Tasas de referencia y conversor de monedas.' },
   { prefijo: '/agencias', titulo: 'Agencias y cajeros', subtitulo: 'Encuentra el punto de atención más cercano.' },
