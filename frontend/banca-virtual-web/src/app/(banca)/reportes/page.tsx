@@ -1,24 +1,27 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import type { Cuenta } from '@/interfaces/cuenta.interface';
 import { errorMessage } from '@/lib/api';
+import { TIPO_CUENTA_LABEL, formatCuenta } from '@/lib/format';
+import { cuentasService } from '@/services/cuentas/cuentas.service';
 import { SelectField, Field } from '@/components/ui/Field';
 import { formatFecha, hoyGT } from '@/lib/format';
-import { OPCIONES_PERIODO, periodoDesdeOpcion, reporteEstadosDeCuenta, reporteGestiones, reporteTransferencias, type Periodo } from '@/lib/reportes';
+import { OPCIONES_PERIODO, periodoDesdeOpcion, reporteEstadoDeCuenta, reporteGestiones, reporteTransferencias, type Periodo } from '@/lib/reportes';
 
 type Clave = 'cuentas' | 'gestiones' | 'transferencias';
 
-const REPORTES: { clave: Clave; titulo: string; descripcion: string; color: string; icono: string; generar: (p: Periodo) => Promise<number> }[] = [
+const REPORTES: { clave: Clave; titulo: string; descripcion: string; color: string; icono: string; generar: (p: Periodo, cuentaId: string) => Promise<number> }[] = [
   {
     clave: 'cuentas',
-    titulo: 'Estados de cuenta',
-    descripcion: 'Saldo inicial y final, créditos, débitos y cada movimiento de todas tus cuentas.',
+    titulo: 'Estado de cuenta',
+    descripcion: 'Saldo inicial y final, créditos, débitos y cada movimiento de la cuenta que elijas.',
     color: '#3a7fd5',
     icono: 'M4 5h16v14H4zM4 10h16M8 15h3',
-    generar: reporteEstadosDeCuenta,
+    generar: (p, cuentaId) => reporteEstadoDeCuenta(p, cuentaId),
   },
   {
     clave: 'gestiones',
@@ -26,7 +29,7 @@ const REPORTES: { clave: Clave; titulo: string; descripcion: string; color: stri
     descripcion: 'Tus solicitudes de tarjetas y créditos con su resultado y el estado en que van.',
     color: '#8b6cf0',
     icono: 'M9 4h6l1 2h3v14H5V6h3zM9 12l2 2 4-4',
-    generar: reporteGestiones,
+    generar: (p) => reporteGestiones(p),
   },
   {
     clave: 'transferencias',
@@ -34,7 +37,7 @@ const REPORTES: { clave: Clave; titulo: string; descripcion: string; color: stri
     descripcion: 'Las transferencias que enviaste y recibiste, con referencia, cuentas y montos.',
     color: '#16a673',
     icono: 'M4 8h14l-3-3M20 16H6l3 3',
-    generar: reporteTransferencias,
+    generar: (p) => reporteTransferencias(p),
   },
 ];
 
@@ -42,6 +45,17 @@ export default function ReportesPage() {
   const [cargando, setCargando] = useState<Clave | null>(null);
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
+  const [cuentas, setCuentas] = useState<Cuenta[]>([]);
+  const [cuentaId, setCuentaId] = useState('');
+  useEffect(() => {
+    cuentasService
+      .listar()
+      .then((c) => {
+        setCuentas(c);
+        setCuentaId((a) => a || c[0]?.id || '');
+      })
+      .catch(() => undefined);
+  }, []);
   const [opcion, setOpcion] = useState('3');
   const [cDesde, setCDesde] = useState(hoyGT(-7));
   const [cHasta, setCHasta] = useState(hoyGT(0));
@@ -65,7 +79,7 @@ export default function ReportesPage() {
     setOk('');
     setCargando(r.clave);
     try {
-      const n = await r.generar(periodo);
+      const n = await r.generar(periodo, cuentaId);
       setOk(`Tu reporte de ${r.titulo.toLowerCase()} se descargó en PDF (${n} ${n === 1 ? 'registro' : 'registros'}).`);
     } catch (e) {
       setError(errorMessage(e));
@@ -114,7 +128,15 @@ export default function ReportesPage() {
               <h3 className="text-base font-semibold">{r.titulo}</h3>
               <p className="mt-1 text-sm text-muted">{r.descripcion}</p>
             </div>
-            <Button onClick={() => descargar(r)} loading={cargando === r.clave} disabled={cargando !== null || !!errorRango} full>
+            {r.clave === 'cuentas' && (
+              <SelectField
+                label="Cuenta"
+                value={cuentaId}
+                onChange={(e) => setCuentaId(e.target.value)}
+                options={cuentas.map((c) => ({ value: c.id, label: `${TIPO_CUENTA_LABEL[c.tipo]} · ${formatCuenta(c.numero)}` }))}
+              />
+            )}
+            <Button onClick={() => descargar(r)} loading={cargando === r.clave} disabled={cargando !== null || !!errorRango || (r.clave === 'cuentas' && !cuentaId)} full>
               {cargando === r.clave ? 'Generando PDF…' : 'Descargar PDF'}
             </Button>
           </Card>
