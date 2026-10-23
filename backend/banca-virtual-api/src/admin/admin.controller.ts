@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
-import { IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength } from 'class-validator';
 import { NotificacionesService } from '../notificaciones/notificaciones.service';
 import { ApiTags } from '@nestjs/swagger';
 import { Auth } from '../auth/jwt-auth.guard';
@@ -9,6 +9,17 @@ import { AbonoExternoDto, CuentaDesdeCpDto } from '../cuentas/cuentas.schema';
 import { CuentasService } from '../cuentas/cuentas.service';
 import { CambiarEstadoDto, FiltroSolicitudesDto } from '../solicitudes/solicitudes.schema';
 import { SolicitudesService } from '../solicitudes/solicitudes.service';
+
+export class EliminarClienteDto {
+  @IsOptional()
+  @Matches(/^\d{13}$/, { message: 'El DPI debe tener 13 dígitos' })
+  dpi?: string;
+
+  @IsOptional()
+  @IsEmail()
+  @MaxLength(160)
+  correo?: string;
+}
 
 export class MensajeBancoDto {
   @IsString()
@@ -77,6 +88,13 @@ export class AdminController {
   @HttpCode(200)
   abonar(@Body() dto: AbonoExternoDto) {
     return this.cuentas.abonoExterno(dto);
+  }
+
+  /** CP Gestiones eliminó al cliente: se borra aquí su ficha y todo lo que depende de ella. Header `X-Service-Key`. */
+  @Post('clientes/eliminar')
+  @HttpCode(200)
+  eliminarCliente(@Body() dto: EliminarClienteDto) {
+    return this.clientes.eliminarDesdeCp(dto.dpi, dto.correo);
   }
 
   /** CP Gestiones abrió una cuenta (ahorro o monetaria): se registra aquí enlazada al cliente por DPI. Idempotente. */

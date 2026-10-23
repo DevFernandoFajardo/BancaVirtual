@@ -28,6 +28,25 @@ export class TarjetasService {
 
   private readonly logger = new Logger(TarjetasService.name);
   private ultimaSync = new Map<string, number>();
+  /** Fecha de corte y de pago que informa CP por tarjeta (se refresca en cada sincronización) */
+  private ciclo = new Map<string, { fechaCorte: string | null; fechaPago: string | null }>();
+
+  /** Busca en el objeto de CP la fecha de corte y la de pago (acepta varios nombres de campo y un nivel de anidación). */
+  private static leerCiclo(c: any): { fechaCorte: string | null; fechaPago: string | null } {
+    const planos: [string, unknown][] = [];
+    for (const [k, v] of Object.entries(c ?? {})) {
+      if (v && typeof v === 'object' && !Array.isArray(v)) for (const [k2, v2] of Object.entries(v)) planos.push([`${k}.${k2}`, v2]);
+      else planos.push([k, v]);
+    }
+    const buscar = (re: RegExp) => {
+      const hit = planos.find(([k, v]) => re.test(k) && v !== null && v !== undefined && v !== '' && typeof v !== 'object');
+      return hit ? String(hit[1]) : null;
+    };
+    return {
+      fechaCorte: buscar(/corte/i),
+      fechaPago: buscar(/(fecha|dia|limite).*pago|pago.*(fecha|limite|dia)|proximo_pago|vencimiento_pago/i),
+    };
+  }
 
   /**
    * Las tarjetas emitidas por el banco viven en CP Gestiones: si el personal la bloquea, cambia el límite o hay saldo,
@@ -65,6 +84,9 @@ export class TarjetasService {
       for (const r of vinculadas) {
         const c = tarjetasCp.find((x) => [x.id, x._id, x.tarjeta_id, x.referencia].some((v) => v !== undefined && String(v) === r.cpId));
         if (!c) continue;
+        const ciclo = TarjetasService.leerCiclo(c);
+        this.ciclo.set(r.id, ciclo);
+        if (!ciclo.fechaCorte && !ciclo.fechaPago) this.logger.warn(`La tarjeta de CP no trae fecha de corte/pago. Campos recibidos: ${Object.keys(c).join(', ')}`);
         const estado = String(c.estado ?? 'activa').toLowerCase().startsWith('activ') ? 'ACTIVA' : 'BLOQUEADA';
         const limite = c.limite_centavos !== undefined ? Number(c.limite_centavos) / 100 : null;
         const usado = c.principal_centavos !== undefined ? (Number(c.principal_centavos) + Number(c.interes_centavos ?? 0)) / 100 : null;
@@ -113,9 +135,14 @@ export class TarjetasService {
     return m;
   }
 
-  private async conOrigen<T extends { id: string; estado: string }>(rows: T[]): Promise<(T & { bloqueadaPor: string | null })[]> {
+  private async conOrigen<T extends { id: string; estado: string }>(rows: T[]): Promise<(T & { bloqueadaPor: string | null; fechaCorte: string | null; fechaPago: string | null })[]> {
     const o = await this.origenes(rows.map((r) => r.id));
-    return rows.map((r) => ({ ...r, bloqueadaPor: r.estado === 'BLOQUEADA' ? (o.get(r.id) ?? 'CLIENTE') : null }));
+    return rows.map((r) => ({
+      ...r,
+      bloqueadaPor: r.estado === 'BLOQUEADA' ? (o.get(r.id) ?? 'CLIENTE') : null,
+      fechaCorte: this.ciclo.get(r.id)?.fechaCorte ?? null,
+      fechaPago: this.ciclo.get(r.id)?.fechaPago ?? null,
+    }));
   }
 
   /** Espera la sincronización como máximo unos segundos para no trabar la pantalla si CP está dormido. */

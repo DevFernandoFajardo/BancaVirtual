@@ -1,5 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { encrypt, maskDocument } from '../common/crypto.util';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { blindIndex, encrypt, maskDocument } from '../common/crypto.util';
 import { DatabaseService, Queryable } from '../database/database.service';
 import { CLIENTE_COLS, Cliente, ClienteRow, UpdatePerfilDto, mapCliente } from './clientes.schema';
 
@@ -20,6 +20,35 @@ export interface NuevoCliente {
 @Injectable()
 export class ClientesService {
   constructor(private readonly db: DatabaseService) {}
+
+  /**
+   * CP Gestiones eliminó al cliente: se borra aquí su ficha y TODO lo que depende de ella (cuentas, movimientos,
+   * transferencias, tarjetas, préstamos, pagos, solicitudes, sesiones, notificaciones…), para que pueda
+   * registrarse de nuevo con el mismo DPI y correo. Se busca por DPI o correo; nunca borra administradores.
+   * Idempotente: si no existe responde eliminado: false.
+   */
+  async eliminarDesdeCp(dpi?: string, correo?: string): Promise<{ ok: true; eliminado: boolean }> {
+    if (!dpi && !correo) throw new BadRequestException('Indica dpi o correo');
+    return this.db.transaction(async (tx) => {
+      const fichas = await this.db.rows<{ id: string }>(
+        `SELECT id FROM clientes WHERE rol = 'CLIENTE' AND (($1::text IS NOT NULL AND dpi_hash = $1) OR ($2::text IS NOT NULL AND email = $2))`,
+        [dpi ? blindIndex(dpi) : null, correo ? correo.toLowerCase() : null],
+        tx,
+      );
+      for (const { id } of fichas) {
+        const cuentas = `(SELECT id FROM cuentas WHERE cliente_id = $1)`;
+        await tx.query(`DELETE FROM abonos_externos WHERE cuenta_id IN ${cuentas}`, [id]);
+        await tx.query(`DELETE FROM transferencias WHERE cuenta_origen_id IN ${cuentas} OR cuenta_destino_id IN ${cuentas}`, [id]);
+        await tx.query(`DELETE FROM transferencias_programadas WHERE cliente_id = $1 OR cuenta_origen_id IN ${cuentas}`, [id]);
+        await tx.query(`DELETE FROM pagos_servicios WHERE cliente_id = $1 OR cuenta_id IN ${cuentas}`, [id]);
+        await tx.query(`DELETE FROM prestamos WHERE cliente_id = $1 OR cuenta_desembolso_id IN ${cuentas}`, [id]);
+        await tx.query('DELETE FROM tarjetas WHERE cliente_id = $1', [id]);
+        // El resto (cuentas y movimientos, solicitudes, sesiones, notificaciones, beneficiarios…) cae por ON DELETE CASCADE
+        await tx.query("DELETE FROM clientes WHERE id = $1 AND rol = 'CLIENTE'", [id]);
+      }
+      return { ok: true as const, eliminado: fichas.length > 0 };
+    });
+  }
 
   async obtener(id: string): Promise<Cliente> {
     const row = await this.db.one<ClienteRow>(`SELECT ${CLIENTE_COLS} FROM clientes WHERE id = $1`, [id]);

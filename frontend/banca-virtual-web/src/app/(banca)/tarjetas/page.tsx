@@ -14,6 +14,14 @@ import { TIPO_CUENTA_LABEL, formatCuenta, formatDate, formatMoney } from '@/lib/
 import { cuentasService } from '@/services/cuentas/cuentas.service';
 import { tarjetasService } from '@/services/banca.service';
 
+/** Fecha de CP: ISO (2026-11-05) -> 05/11/2026; solo un día (5) -> "Día 5 de cada mes". */
+function fechaCiclo(v?: string | null): string {
+  if (!v) return '—';
+  if (/^\d{1,2}$/.test(v)) return `Día ${Number(v)} de cada mes`;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : v;
+}
+
 export default function TarjetasPage() {
   const [tarjetas, setTarjetas] = useState<Tarjeta[] | null>(null);
   const [cuentas, setCuentas] = useState<Cuenta[]>([]);
@@ -182,6 +190,16 @@ export default function TarjetasPage() {
               <p className="text-xs text-muted">
                 Saldo a pagar: <b className="tabular text-ink">{formatMoney(t.saldoUtilizado)}</b> ({usado.toFixed(0)}% del límite)
               </p>
+              <div className="grid grid-cols-2 gap-3 border-t border-line pt-3">
+                <div>
+                  <p className="text-xs text-muted">Fecha de corte</p>
+                  <p className="text-sm font-semibold">{fechaCiclo(t.fechaCorte)}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-muted">Fecha límite de pago</p>
+                  <p className="text-sm font-semibold">{fechaCiclo(t.fechaPago)}</p>
+                </div>
+              </div>
             </Card>
 
             <div className="flex flex-wrap gap-2">

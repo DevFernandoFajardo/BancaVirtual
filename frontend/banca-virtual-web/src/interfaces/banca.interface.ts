@@ -89,6 +89,9 @@ export interface Tarjeta {
   estado: 'ACTIVA' | 'BLOQUEADA';
   /** Quién la bloqueó: el propio cliente (puede desbloquear) o el banco (no puede) */
   bloqueadaPor?: 'CLIENTE' | 'BANCO' | null;
+  /** Fecha de corte y de pago que informa CP Gestiones (fecha ISO o día del mes) */
+  fechaCorte?: string | null;
+  fechaPago?: string | null;
   createdAt: string;
 }
 
