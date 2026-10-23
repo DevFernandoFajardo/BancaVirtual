@@ -89,7 +89,16 @@ export class TarjetasService {
         if (!ciclo.fechaCorte && !ciclo.fechaPago) this.logger.warn(`La tarjeta de CP no trae fecha de corte/pago. Campos recibidos: ${Object.keys(c).join(', ')}`);
         const estado = String(c.estado ?? 'activa').toLowerCase().startsWith('activ') ? 'ACTIVA' : 'BLOQUEADA';
         const limite = c.limite_centavos !== undefined ? Number(c.limite_centavos) / 100 : null;
-        const usado = c.principal_centavos !== undefined ? (Number(c.principal_centavos) + Number(c.interes_centavos ?? 0)) / 100 : null;
+        const usadoCp = c.principal_centavos !== undefined ? (Number(c.principal_centavos) + Number(c.interes_centavos ?? 0)) / 100 : null;
+        // CP aún no conoce las compras hechas desde CP BancaVirtual: se suman (consumos - pagos locales) al saldo que informa CP,
+        // para que el crédito disponible y el límite se respeten. Cuando CP registre los consumos, esto se retira.
+        const neto = await this.db
+          .one<{ neto: string }>(
+            `SELECT COALESCE(SUM(CASE WHEN tipo = 'CONSUMO' THEN monto ELSE -monto END), 0)::text AS neto FROM tarjeta_movimientos WHERE tarjeta_id = $1`,
+            [r.id],
+          )
+          .catch(() => null);
+        const usado = usadoCp !== null ? Math.max(0, usadoCp + Number(neto?.neto ?? 0)) : null;
         const antes = await this.db.one<{ estado: string }>('SELECT estado FROM tarjetas WHERE id = $1', [r.id]);
         const [previa] = antes ? await this.conOrigen([{ id: r.id, estado: antes.estado }]) : [null];
         // El bloqueo que puso el cliente aquí se respeta aunque CP aún no lo muestre
