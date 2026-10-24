@@ -9,6 +9,7 @@
  *   POST /pagos             ejecuta el pago (idempotente por Idempotency-Key / referencia_banco)
  *   POST /pagos/reversa     anula un pago (idempotente)
  *   GET  /pagos             últimos pagos que recibió este proveedor (para comprobar la integración)
+ *   GET  /panel             página web para ver esos pagos (pide la llave; no se guarda)
  *
  * Formatos: JSON (Content-Type: application/json) o XML (application/xml). La respuesta usa el mismo formato que el
  * pedido (o el que indique la cabecera Accept).
@@ -101,10 +102,41 @@ const pausa = () => new Promise((r) => setTimeout(r, 120 + Math.random() * 280))
 
 // ------------------------------------------------------------------ servidor
 
+const PANEL = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Proveedor de Servicios · Panel</title>
+<style>body{font:15px system-ui,sans-serif;margin:0;background:#0b1020;color:#e8ecf8}main{max-width:900px;margin:0 auto;padding:24px 16px}
+h1{font-size:1.3rem;margin:0 0 4px}p{color:#9aa6c8;margin:4px 0 16px}input,button{font:inherit;padding:9px 12px;border-radius:8px;border:1px solid #2a3558;background:#121a33;color:inherit}
+button{background:#4f86ff;border-color:#4f86ff;cursor:pointer}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{text-align:left;padding:9px 8px;border-bottom:1px solid #1f2a4d;font-size:14px}
+th{color:#9aa6c8;font-weight:600}.ok{color:#3ddc97}.rev{color:#f87171}.err{color:#f87171;margin-top:12px}</style></head><body><main>
+<h1>Proveedor de Servicios (simulado)</h1><p>Pagos que este proveedor recibió de CP BancaVirtual. Escribe la llave de API para verlos; no se guarda.</p>
+<form id="f"><input id="k" type="password" placeholder="Llave de API" autocomplete="off" size="32"> <button>Ver pagos</button></form>
+<div id="e" class="err"></div><table id="t" hidden><thead><tr><th>Fecha</th><th>Servicio</th><th>Contrato</th><th>Monto</th><th>Estado</th><th>Autorización</th><th>Ref. banco</th></tr></thead><tbody></tbody></table>
+<script>
+const $=(i)=>document.getElementById(i);let llave='',timer;
+async function cargar(){try{const r=await fetch('/pagos',{headers:{Authorization:'Bearer '+llave,Accept:'application/json'}});
+if(!r.ok){$('e').textContent=r.status===401?'Llave inválida':'Error '+r.status;$('t').hidden=true;clearInterval(timer);return}
+$('e').textContent='';const d=await r.json();const tb=$('t').querySelector('tbody');tb.innerHTML='';
+if(!d.length){$('e').textContent='Aún no hay pagos (la lista se borra cuando el servicio se reinicia o duerme).'}
+for(const p of d){const tr=document.createElement('tr');
+const c=[new Date(p.fecha).toLocaleString('es-GT'),p.servicio,p.contrato,'Q'+p.monto,p.estado,p.autorizacion,p.referencia_banco];
+c.forEach((v,i)=>{const td=document.createElement('td');td.textContent=v;if(i===4)td.className=v==='APROBADO'?'ok':'rev';tr.appendChild(td)});tb.appendChild(tr)}
+$('t').hidden=false}catch(e){$('e').textContent='No se pudo consultar'}}
+$('f').addEventListener('submit',(e)=>{e.preventDefault();llave=$('k').value.trim();clearInterval(timer);cargar();timer=setInterval(cargar,5000)});
+</script></main></body></html>`;
+
 const server = http.createServer(async (req, res) => {
+  const inicio = Date.now();
+  res.on('finish', () => {
+    if (req.url !== '/health') console.log(`${new Date().toISOString()} ${req.method} ${req.url} -> ${res.statusCode} (${Date.now() - inicio} ms) ${esXml(req) ? 'XML' : 'JSON'}`);
+  });
   try {
     const url = new URL(req.url, 'http://x');
     const ruta = url.pathname.replace(/^\/api\/v\d+/, '').replace(/\/+$/, '') || '/';
+
+    if (req.method === 'GET' && ruta === '/panel') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end(PANEL);
+    }
 
     if (req.method === 'GET' && (ruta === '/health' || ruta === '/')) {
       return responder(req, res, 200, { ok: true, servicio: 'proveedor-servicios-sim', formatos: ['json', 'xml'] }, xmlObj('estado', { ok: 'true', servicio: 'proveedor-servicios-sim', formatos: 'json,xml' }));
