@@ -63,13 +63,15 @@ export class ClientesService {
       await this.db.query('UPDATE clientes SET telefono = NULL, cuenta_celular_id = NULL, updated_at = now() WHERE id = $1', [id]);
       return { telefono: null, cuentaId: null };
     }
-    const cuenta = await this.db.one<{ estado: string; tipo: string }>('SELECT estado, tipo FROM cuentas WHERE id = $1 AND cliente_id = $2', [cuentaId, id]);
-    if (!cuenta) throw new NotFoundException('Cuenta no encontrada');
-    if (cuenta.estado !== 'ACTIVA' || cuenta.tipo === 'PLAZO_FIJO') {
-      throw new UnprocessableEntityException('Elige una cuenta de ahorro o monetaria activa para recibir');
+    if (cuentaId) {
+      const cuenta = await this.db.one<{ estado: string; tipo: string }>('SELECT estado, tipo FROM cuentas WHERE id = $1 AND cliente_id = $2', [cuentaId, id]);
+      if (!cuenta) throw new NotFoundException('Cuenta no encontrada');
+      if (cuenta.estado !== 'ACTIVA' || cuenta.tipo === 'PLAZO_FIJO') {
+        throw new UnprocessableEntityException('Elige una cuenta de ahorro o monetaria activa para recibir');
+      }
     }
     try {
-      await this.db.query('UPDATE clientes SET telefono = $2, cuenta_celular_id = $3, updated_at = now() WHERE id = $1', [id, telefono, cuentaId]);
+      await this.db.query('UPDATE clientes SET telefono = $2, cuenta_celular_id = $3, updated_at = now() WHERE id = $1', [id, telefono, cuentaId ?? null]);
     } catch (err: any) {
       if (err?.code === PG_UNIQUE_VIOLATION) throw new ConflictException('Ese número de celular ya está registrado por otro cliente');
       throw err;

@@ -12,8 +12,9 @@ export interface Beneficiario {
 
 /** Si se guardó por celular, la cuenta es la que ese número tiene asociada hoy; si no, la guardada. */
 export const BENEFICIARIO_COLS = `id, alias,
-  COALESCE((SELECT c.numero FROM clientes cl JOIN cuentas c ON c.id = cl.cuenta_celular_id AND c.estado = 'ACTIVA'
-             WHERE beneficiarios.telefono IS NOT NULL AND cl.telefono = beneficiarios.telefono), cuenta_numero) AS "cuentaNumero",
+  COALESCE((SELECT c.numero FROM clientes cl JOIN cuentas c ON c.cliente_id = cl.id AND c.estado = 'ACTIVA' AND c.tipo <> 'PLAZO_FIJO'
+             WHERE beneficiarios.telefono IS NOT NULL AND cl.telefono = beneficiarios.telefono
+             ORDER BY (c.id = cl.cuenta_celular_id) DESC, c.created_at LIMIT 1), cuenta_numero) AS "cuentaNumero",
   titular, telefono, created_at AS "createdAt"`;
 
 export class CrearBeneficiarioDto {

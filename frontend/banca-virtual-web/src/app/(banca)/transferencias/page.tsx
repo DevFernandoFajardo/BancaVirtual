@@ -9,7 +9,7 @@ import { Field, SelectField } from '@/components/ui/Field';
 import { PageLoader } from '@/components/ui/Spinner';
 import type { Beneficiario, Frecuencia, Programada } from '@/interfaces/banca.interface';
 import type { Cuenta, CuentaDestino } from '@/interfaces/cuenta.interface';
-import type { ComprobanteTransferencia, TransferenciaHistorial } from '@/interfaces/transferencia.interface';
+import type { ComprobanteTransferencia, EnvioPendienteCelular, PendienteCelular, TransferenciaHistorial } from '@/interfaces/transferencia.interface';
 import { errorMessage } from '@/lib/api';
 import { TIPO_CUENTA_LABEL, formatCuenta, formatDate, formatFecha, formatMoney, hoyGT } from '@/lib/format';
 import { descargarComprobante } from '@/lib/pdf';
@@ -34,21 +34,24 @@ export default function TransferenciasPage() {
   const [beneficiarios, setBeneficiarios] = useState<Beneficiario[]>([]);
   const [programadas, setProgramadas] = useState<Programada[]>([]);
   const [historial, setHistorial] = useState<TransferenciaHistorial[]>([]);
+  const [pendientesCel, setPendientesCel] = useState<PendienteCelular[]>([]);
   const [error, setError] = useState('');
   const [aviso, setAviso] = useState('');
 
   const cargar = useCallback(async () => {
     try {
-      const [c, h, b, p] = await Promise.all([
+      const [c, h, b, p, pc] = await Promise.all([
         cuentasService.listar(),
         transferenciasService.historial(1, 8),
         beneficiariosService.listar(),
         programadasService.listar(),
+        transferenciasService.pendientesCelular().catch(() => [] as PendienteCelular[]),
       ]);
       setCuentas(c);
       setHistorial(h.items);
       setBeneficiarios(b);
       setProgramadas(p);
+      setPendientesCel(pc);
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -97,6 +100,8 @@ export default function TransferenciasPage() {
 
       {pestana === 'beneficiarios' && <PanelBeneficiarios beneficiarios={beneficiarios} onCambio={cargar} onError={setError} />}
 
+      {pestana === 'nueva' && <PendientesCelular items={pendientesCel} onCambio={cargar} onError={setError} />}
+
       {pestana === 'nueva' && <Historial historial={historial} onError={setError} />}
     </div>
   );
@@ -142,6 +147,7 @@ function NuevaTransferencia({
   const [modoUsado, setModoUsado] = useState<Modo>('otra');
   const [celularUsado, setCelularUsado] = useState('');
   const [bajando, setBajando] = useState(false);
+  const [envioPendiente, setEnvioPendiente] = useState<EnvioPendienteCelular | null>(null);
 
   const origen = origenes.find((c) => c.id === origenId);
   const propias = origenes.filter((c) => c.id !== origenId);
@@ -149,7 +155,9 @@ function NuevaTransferencia({
   const numeroDestino = modo === 'propia' ? (propias.find((c) => c.id === propiaId)?.numero ?? '') : modo === 'beneficiario' ? (beneficiarios.find((b) => b.id === benefId)?.cuentaNumero ?? '') : modo === 'celular' ? (celDestino?.numero ?? '') : numeroLibre;
 
   const montoNum = Number(monto);
-  const numeroOk = /^\d{10}$/.test(numeroDestino);
+  // Celular sin cuenta todavía: el envío queda pendiente de reclamar (no se puede programar)
+  const pendienteCel = modo === 'celular' && !!celDestino && celDestino.registrado === false;
+  const numeroOk = pendienteCel ? !programar : /^\d{10}$/.test(numeroDestino);
   const montoOk = montoNum > 0 && (!origen || programar || montoNum <= Number(origen.saldo));
   const mismaCuenta = !!origen && origen.numero === numeroDestino;
   const fechaOk = !programar || fecha >= hoyGT();
@@ -188,6 +196,11 @@ function NuevaTransferencia({
     onError('');
     setTrabajando(true);
     try {
+      if (pendienteCel) {
+        setDestino(celDestino);
+        setPaso('confirmar');
+        return;
+      }
       setDestino(await cuentasService.validarDestino(numeroDestino));
       if (programar) {
         await programadasService.crear({
@@ -217,6 +230,29 @@ function NuevaTransferencia({
     onError('');
     setTrabajando(true);
     try {
+      if (modo === 'celular') {
+        const r = await transferenciasService.crearCelular({
+          cuentaOrigenId: origen.id,
+          telefono: celular,
+          monto: montoNum,
+          descripcion: descripcion.trim() || undefined,
+        });
+        if (r.pendiente) {
+          setEnvioPendiente(r);
+          setPaso('listo');
+          await onCambio();
+          return;
+        }
+        const { pendiente: _p, ...comp } = r;
+        setComprobante(comp);
+        setModoUsado(modo);
+        setCelularUsado(celular);
+        setAliasNuevo(destino?.titular.split(' ')[0] ?? '');
+        setGuardado(false);
+        setPaso('listo');
+        await onCambio();
+        return;
+      }
       const c = await transferenciasService.crear({
         cuentaOrigenId: origen.id,
         cuentaDestinoNumero: numeroDestino,
@@ -246,6 +282,7 @@ function NuevaTransferencia({
     setMonto('');
     setDescripcion('');
     setComprobante(null);
+    setEnvioPendiente(null);
     setProgramar(false);
     setFrecuencia('UNICA');
     onError('');
@@ -280,17 +317,23 @@ function NuevaTransferencia({
 
   if (origenes.length === 0) return <Alert tone="info">Necesitas una cuenta activa (monetaria o de ahorro) para transferir.</Alert>;
 
-  if (paso === 'confirmar' && origen && destino) {
+  if (paso === 'confirmar' && origen && (destino || pendienteCel)) {
     return (
       <Card className="mx-auto w-full max-w-lg space-y-4">
         <h2 className="text-lg font-semibold">Confirma tu transferencia</h2>
         <dl className="space-y-3 text-sm">
           <Fila k="Desde" v={`${origen.alias ?? TIPO_CUENTA_LABEL[origen.tipo]} · ${formatCuenta(origen.numero)}`} />
-          <Fila k="Para" v={modo === 'celular' ? `${destino.titular} · Celular ${celular.slice(0, 4)} ${celular.slice(4)}` : `${destino.titular} · ${formatCuenta(destino.numero)}`} />
+          <Fila k="Para" v={pendienteCel ? `Celular ${celular.slice(0, 4)} ${celular.slice(4)} (aún no registrado)` : modo === 'celular' ? `${destino!.titular} · Celular ${celular.slice(0, 4)} ${celular.slice(4)}` : `${destino!.titular} · ${formatCuenta(destino!.numero)}`} />
           <Fila k="Monto" v={formatMoney(montoNum, origen.moneda)} fuerte />
           {descripcion.trim() && <Fila k="Descripción" v={descripcion.trim()} />}
         </dl>
-        <p className="text-xs text-muted">Verifica que el titular sea quien esperas: las transferencias no se pueden deshacer.</p>
+        {pendienteCel ? (
+          <Alert tone="info">
+            Ese celular todavía no está en CP BancaVirtual. Tu dinero sale de tu cuenta y queda retenido: se entrega apenas la persona registre su número. Si nadie lo hace en 7 días, te lo devolvemos. Puedes cancelarlo cuando quieras mientras siga pendiente.
+          </Alert>
+        ) : (
+          <p className="text-xs text-muted">Verifica que el titular sea quien esperas: las transferencias no se pueden deshacer.</p>
+        )}
         <div className="flex flex-col gap-3 sm:flex-row">
           <Button variant="secondary" full onClick={() => setPaso('formulario')} disabled={trabajando}>
             Volver
@@ -299,6 +342,30 @@ function NuevaTransferencia({
             Confirmar y enviar
           </Button>
         </div>
+      </Card>
+    );
+  }
+
+  if (paso === 'listo' && envioPendiente) {
+    return (
+      <Card className="mx-auto w-full max-w-lg space-y-4">
+        <div className="text-center">
+          <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-brand-50 text-2xl text-brand-600" aria-hidden="true">
+            ⏳
+          </span>
+          <h2 className="mt-3 text-lg font-semibold">Envío en espera</h2>
+          <p className="tabular text-3xl font-bold">{formatMoney(envioPendiente.monto, envioPendiente.moneda)}</p>
+        </div>
+        <dl className="space-y-3 text-sm">
+          <Fila k="Referencia" v={envioPendiente.referencia} />
+          <Fila k="Para" v={`Celular ${envioPendiente.telefono.slice(0, 4)} ${envioPendiente.telefono.slice(4)}`} />
+          <Fila k="Se devuelve el" v={formatDate(envioPendiente.expiraEn)} />
+          <Fila k="Tu nuevo saldo" v={formatMoney(envioPendiente.saldoOrigenDespues, envioPendiente.moneda)} />
+        </dl>
+        <p className="text-xs text-muted">Avísale a esa persona que se registre con ese número en CP BancaVirtual. Apenas lo haga, recibe el dinero y te avisamos. Puedes cancelarlo desde «Envíos pendientes».</p>
+        <Button full onClick={reiniciar}>
+          Hacer otra transferencia
+        </Button>
       </Card>
     );
   }
@@ -411,8 +478,8 @@ function NuevaTransferencia({
             value={celular}
             onChange={(e) => setCelular(e.target.value.replace(/\D/g, ''))}
             placeholder="5555 1234"
-            hint={buscandoCel ? 'Buscando…' : celDestino ? `Titular: ${celDestino.titular}` : 'Envía al celular registrado en CP BancaVirtual (8 dígitos)'}
-            error={errorCel || (mismaCuenta ? 'Ese celular corresponde a tu misma cuenta de origen' : undefined)}
+            hint={buscandoCel ? 'Buscando…' : celDestino ? (celDestino.registrado === false ? 'Aún no está registrado: el dinero queda pendiente hasta 7 días' : `Titular: ${celDestino.titular}`) : 'Puedes enviar a cualquier celular de 8 dígitos'}
+            error={errorCel || (mismaCuenta ? 'Ese celular corresponde a tu misma cuenta de origen' : pendienteCel && programar ? 'Para programar, el celular debe estar ya registrado' : undefined)}
           />
         )}
 
@@ -595,7 +662,11 @@ function PanelBeneficiarios({ beneficiarios, onCambio, onError }: { beneficiario
     setBuscando(true);
     cuentasService
       .validarCelular(celular)
-      .then((d) => vigente && setTitular(d.titular))
+      .then((d) => {
+        if (!vigente) return;
+        if (d.registrado === false) setErrorCel('Ese celular aún no está registrado. Envíale desde «Nueva transferencia → Celular»: lo recibe cuando se registre.');
+        else setTitular(d.titular);
+      })
       .catch((e) => vigente && setErrorCel(errorMessage(e)))
       .finally(() => vigente && setBuscando(false));
     return () => {
@@ -695,6 +766,56 @@ function PanelBeneficiarios({ beneficiarios, onCambio, onError }: { beneficiario
         </ul>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- envíos pendientes por celular
+
+function PendientesCelular({ items, onCambio, onError }: { items: PendienteCelular[]; onCambio: () => Promise<void>; onError: (m: string) => void }) {
+  const [trabajando, setTrabajando] = useState<string | null>(null);
+  if (items.length === 0) return null;
+
+  async function cancelar(id: string) {
+    setTrabajando(id);
+    onError('');
+    try {
+      await transferenciasService.cancelarPendiente(id);
+      await onCambio();
+    } catch (err) {
+      onError(errorMessage(err));
+    } finally {
+      setTrabajando(null);
+    }
+  }
+
+  const ESTADO: Record<PendienteCelular['estado'], string> = { PENDIENTE: 'En espera', RECLAMADA: 'Recibido', DEVUELTA: 'Devuelto', CANCELADA: 'Cancelado' };
+
+  return (
+    <Card className="!p-4">
+      <h2 className="font-semibold">Envíos por celular</h2>
+      <p className="mt-0.5 text-xs text-muted">Números que aún no estaban registrados: el dinero queda retenido hasta que se registren o se te devuelve a los 7 días.</p>
+      <ul className="mt-3 divide-y divide-line">
+        {items.map((p) => (
+          <li key={p.id} className="flex items-center justify-between gap-3 py-2.5">
+            <div className="min-w-0">
+              <p className="tabular text-sm font-semibold">
+                {formatMoney(p.monto, p.moneda)} · {p.telefono.slice(0, 4)} {p.telefono.slice(4)}
+              </p>
+              <p className="text-xs text-muted">
+                {p.estado === 'PENDIENTE' ? `Vence ${formatDate(p.expiraEn)}` : `${ESTADO[p.estado]} ${p.resueltaEn ? formatDate(p.resueltaEn) : ''}`}
+              </p>
+            </div>
+            {p.estado === 'PENDIENTE' ? (
+              <button onClick={() => cancelar(p.id)} disabled={trabajando === p.id} className="shrink-0 text-xs font-semibold text-rojo hover:underline disabled:opacity-50">
+                {trabajando === p.id ? 'Cancelando…' : 'Cancelar y recuperar'}
+              </button>
+            ) : (
+              <span className="shrink-0 rounded-full bg-input px-2 py-0.5 text-xs font-semibold text-muted">{ESTADO[p.estado]}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }
 

@@ -53,6 +53,11 @@ export class RegisterDto {
   @IsDateString()
   fechaNacimiento: string;
 
+  /** Celular (8 dígitos): permite recibir transferencias por número de teléfono */
+  @IsOptional()
+  @Matches(/^[2-7]\d{7}$/, { message: 'El celular debe tener 8 dígitos' })
+  celular?: string;
+
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)

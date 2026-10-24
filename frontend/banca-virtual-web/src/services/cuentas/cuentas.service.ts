@@ -3,6 +3,8 @@ import type {
   AbrirCuentaRequest,
   Cuenta,
   CuentaDestino,
+  FiltroHistorial,
+  HistorialRespuesta,
   Movimiento,
   Paginado,
 } from '@/interfaces/cuenta.interface';
@@ -21,6 +23,12 @@ export const cuentasService = {
   validarDestino: (numero: string) => api<CuentaDestino>(`/cuentas/validar/${encodeURIComponent(numero)}`),
 
   /** Busca la cuenta que recibe por un número de celular */
+  historial: (f: FiltroHistorial, page = 1, limit = 20) => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries({ ...f, page, limit })) if (v !== undefined && v !== '') p.set(k, String(v));
+    return api<HistorialRespuesta>(`/cuentas/historial?${p.toString()}`);
+  },
+
   validarCelular: (telefono: string) => api<CuentaDestino>(`/cuentas/validar-celular/${encodeURIComponent(telefono)}`),
 
   /** Solo demostración: simula un depósito en ventanilla */

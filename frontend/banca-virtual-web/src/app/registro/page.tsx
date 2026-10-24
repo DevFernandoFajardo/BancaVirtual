@@ -19,6 +19,7 @@ export default function RegistroPage() {
     password: '',
     dpi: '',
     fechaNacimiento: '',
+    celular: '',
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -27,6 +28,7 @@ export default function RegistroPage() {
 
   const dpiOk = /^\d{13}$/.test(f.dpi);
   const passOk = f.password.length >= 8;
+  const celOk = /^[2-7]\d{7}$/.test(f.celular);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -40,6 +42,7 @@ export default function RegistroPage() {
         primerApellido: f.primerApellido.trim(),
         dpi: f.dpi,
         fechaNacimiento: f.fechaNacimiento,
+        celular: f.celular,
       });
       router.replace('/dashboard');
     } catch (err) {
@@ -94,12 +97,24 @@ export default function RegistroPage() {
             />
             <Field label="Fecha de nacimiento" type="date" required value={f.fechaNacimiento} onChange={set('fechaNacimiento')} max={new Date().toISOString().slice(0, 10)} />
           </div>
+          <Field
+            label="Celular"
+            required
+            inputMode="numeric"
+            autoComplete="tel-national"
+            maxLength={8}
+            value={f.celular}
+            onChange={(e) => setF((p) => ({ ...p, celular: e.target.value.replace(/\D/g, '') }))}
+            placeholder="5555 1234"
+            hint="Con tu número te pueden enviar dinero, como en Tigo Money. 8 dígitos."
+            error={f.celular.length >= 8 && !celOk ? 'Escribe un celular válido de 8 dígitos' : undefined}
+          />
 
           <Button
             type="submit"
             full
             loading={loading}
-            disabled={!f.primerNombre || !f.primerApellido || !f.email || !passOk || !dpiOk || !f.fechaNacimiento}
+            disabled={!f.primerNombre || !f.primerApellido || !f.email || !passOk || !dpiOk || !f.fechaNacimiento || !celOk}
           >
             Crear cuenta
           </Button>

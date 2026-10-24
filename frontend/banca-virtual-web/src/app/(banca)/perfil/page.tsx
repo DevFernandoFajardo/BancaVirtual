@@ -37,7 +37,7 @@ export default function PerfilPage() {
         setCuentas(aptas);
         setCelular(cel.telefono ?? '');
         setCelGuardado(cel.telefono);
-        setCuentaCel(cel.cuentaId ?? aptas[0]?.id ?? '');
+        setCuentaCel(cel.cuentaId ?? '');
       })
       .catch(() => undefined);
   }, []);
@@ -47,7 +47,7 @@ export default function PerfilPage() {
     setCelOk('');
     setCelGuardando(true);
     try {
-      const r = await perfilService.guardarCelular(telefono, telefono ? cuentaCel : undefined);
+      const r = await perfilService.guardarCelular(telefono, telefono ? cuentaCel || undefined : undefined);
       setCelGuardado(r.telefono);
       if (!r.telefono) setCelular('');
       setCelOk(r.telefono ? 'Listo: ya pueden enviarte dinero a ese celular.' : 'Quitaste tu celular. Ya no pueden transferirte por número.');
@@ -113,21 +113,20 @@ export default function PerfilPage() {
         <div className="mt-4 space-y-4">
           {celError && <Alert tone="error">{celError}</Alert>}
           {celOk && <Alert tone="success">{celOk}</Alert>}
-          {cuentas.length === 0 ? (
-            <p className="text-sm text-muted">Necesitas una cuenta de ahorro o monetaria activa para recibir transferencias.</p>
-          ) : (
+          {cuentas.length === 0 && <p className="text-sm text-muted">Aún no tienes cuenta activa. Guarda tu celular y lo que te envíen se acreditará cuando abras tu primera cuenta.</p>}
+          {(
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Celular" inputMode="numeric" maxLength={8} value={celular} onChange={(e) => setCelular(e.target.value.replace(/\D/g, ''))} placeholder="5555 1234" hint="8 dígitos" />
               <SelectField
                 label="Recibir en"
                 value={cuentaCel}
                 onChange={(e) => setCuentaCel(e.target.value)}
-                options={cuentas.map((c) => ({ value: c.id, label: `${TIPO_CUENTA_LABEL[c.tipo]} · ${formatCuenta(c.numero)}` }))}
+                options={[{ value: '', label: 'Automática (mi cuenta más antigua)' }, ...cuentas.map((c) => ({ value: c.id, label: `${TIPO_CUENTA_LABEL[c.tipo]} · ${formatCuenta(c.numero)}` }))]}
               />
             </div>
           )}
           <div className="flex flex-wrap gap-2">
-            <Button type="button" loading={celGuardando} disabled={!/^[2-7]\d{7}$/.test(celular) || !cuentaCel} onClick={() => guardarCelular(celular)}>
+            <Button type="button" loading={celGuardando} disabled={!/^[2-7]\d{7}$/.test(celular)} onClick={() => guardarCelular(celular)}>
               Guardar celular
             </Button>
             {celGuardado && (

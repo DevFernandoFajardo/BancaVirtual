@@ -69,7 +69,8 @@ export class CelularDto {
   @Matches(/^[2-7]\d{7}$/, { message: 'El celular debe tener 8 dígitos' })
   telefono: string | null;
 
-  @ValidateIf((o) => o.telefono !== null)
+  /** Opcional: si no se indica, recibe la cuenta activa más antigua */
+  @IsOptional()
   @IsUUID()
   cuentaId?: string;
 }

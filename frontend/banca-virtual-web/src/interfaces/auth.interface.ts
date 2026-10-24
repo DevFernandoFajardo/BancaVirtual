@@ -41,6 +41,7 @@ export interface RegisterRequest {
   primerApellido: string;
   dpi: string;
   fechaNacimiento: string;
+  celular?: string;
 }
 
 export interface UpdatePerfilRequest {

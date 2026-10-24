@@ -83,6 +83,37 @@ export class FiltroMovimientosDto extends PaginacionDto {
   q?: string;
 }
 
+export const CATEGORIAS_HISTORIAL = ['TRANSFERENCIA', 'DEPOSITO', 'SERVICIO', 'PRESTAMO', 'TARJETA', 'PLAZO', 'OTRO'] as const;
+export type CategoriaHistorial = (typeof CATEGORIAS_HISTORIAL)[number];
+
+/** Historial de TODAS las cuentas del cliente: entradas y salidas de dinero con filtros. */
+export class HistorialDto extends PaginacionDto {
+  @IsOptional()
+  @IsUUID()
+  cuentaId?: string;
+
+  @IsOptional()
+  @IsIn(CATEGORIAS_HISTORIAL as unknown as string[])
+  categoria?: CategoriaHistorial;
+
+  @IsOptional()
+  @Matches(FECHA, { message: 'desde debe tener formato YYYY-MM-DD' })
+  desde?: string;
+
+  @IsOptional()
+  @Matches(FECHA, { message: 'hasta debe tener formato YYYY-MM-DD' })
+  hasta?: string;
+
+  @IsOptional()
+  @IsIn(['DEBITO', 'CREDITO'])
+  tipo?: 'DEBITO' | 'CREDITO';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  q?: string;
+}
+
 export class PeriodoDto {
   @IsOptional()
   @Matches(FECHA)

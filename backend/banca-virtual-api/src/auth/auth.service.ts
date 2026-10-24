@@ -52,6 +52,11 @@ export class AuthService implements OnModuleInit {
 
   async register(dto: RegisterDto, meta: MetaSesion = {}) {
     const email = dto.email.toLowerCase();
+    if (dto.celular) {
+      // Se valida ANTES de crear la cuenta en CP para no dejarla huérfana si el número ya es de otro cliente
+      const ocupado = await this.db.one('SELECT 1 AS x FROM clientes WHERE telefono = $1', [dto.celular]).catch(() => null);
+      if (ocupado) throw new ConflictException('Ese número de celular ya está registrado por otro cliente');
+    }
     // CP Gestiones es la ÚNICA fuente de credenciales: el registro se hace allá (rechaza correo/DPI repetidos, aplica sus reglas de contraseña)
     await this.cpAuth.registrar({
       nombre: dto.primerNombre.trim(),
@@ -72,6 +77,10 @@ export class AuthService implements OnModuleInit {
       tipoEmpleo: dto.tipoEmpleo,
       antiguedad: dto.antiguedadLaboralMeses,
     });
+    if (dto.celular) {
+      // La cuenta que recibe se elige sola (la más antigua activa) hasta que el cliente escoja otra en Mi perfil
+      await this.db.query('UPDATE clientes SET telefono = $2, updated_at = now() WHERE id = $1 AND telefono IS NULL', [cliente.id, dto.celular]).catch(() => undefined);
+    }
     return this.emitirToken(cliente, meta);
   }
 

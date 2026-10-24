@@ -2,7 +2,7 @@ import { Body, Controller, ForbiddenException, Get, Param, ParseUUIDPipe, Post, 
 import { ApiTags } from '@nestjs/swagger';
 import { AuthUser } from '../auth/auth.schema';
 import { Auth, CurrentUser } from '../auth/jwt-auth.guard';
-import { AbrirCuentaDto, DepositoDemoDto, FiltroMovimientosDto, LiquidarPlazoDto, PeriodoDto, PlazoFijoDto } from './cuentas.schema';
+import { AbrirCuentaDto, DepositoDemoDto, FiltroMovimientosDto, HistorialDto, LiquidarPlazoDto, PeriodoDto, PlazoFijoDto } from './cuentas.schema';
 import { CuentasService } from './cuentas.service';
 
 @ApiTags('Cuentas')
@@ -28,6 +28,12 @@ export class CuentasController {
   }
 
   // Debe ir antes de ':id' para que "validar" no se interprete como un id
+  /** Historial de entradas y salidas de todas las cuentas del cliente. */
+  @Get('historial')
+  historial(@CurrentUser() user: AuthUser, @Query() q: HistorialDto) {
+    return this.cuentas.historial(user.sub, q);
+  }
+
   @Get('validar-celular/:telefono')
   validarCelular(@Param('telefono') telefono: string) {
     return this.cuentas.validarCelular(telefono.replace(/\D/g, '').slice(0, 8));

@@ -47,6 +47,8 @@ export interface CuentaDestino {
   moneda: string;
   /** Nombre con el apellido enmascarado, p. ej. "Luis P****" */
   titular: string;
+  /** Solo en consultas por celular: false si ese número aún no tiene cuenta (el envío queda pendiente) */
+  registrado?: boolean;
 }
 
 export interface FiltroMovimientos {
@@ -74,4 +76,41 @@ export interface LiquidacionPlazo {
   intereses: string;
   total: string;
   destino: string;
+}
+
+export type CategoriaHistorial = 'TRANSFERENCIA' | 'DEPOSITO' | 'SERVICIO' | 'PRESTAMO' | 'TARJETA' | 'PLAZO' | 'OTRO';
+
+/** Una entrada o salida de dinero de cualquiera de las cuentas del cliente */
+export interface HistorialItem {
+  id: string;
+  cuentaId: string;
+  cuentaNumero: string;
+  cuentaTipo: TipoCuenta;
+  cuentaAlias: string | null;
+  moneda: string;
+  tipo: 'DEBITO' | 'CREDITO';
+  monto: string;
+  saldoPosterior: string;
+  descripcion: string;
+  referencia: string | null;
+  categoria: CategoriaHistorial;
+  createdAt: string;
+}
+
+export interface HistorialRespuesta {
+  items: HistorialItem[];
+  total: number;
+  entradas: string;
+  salidas: string;
+  page: number;
+  limit: number;
+}
+
+export interface FiltroHistorial {
+  cuentaId?: string;
+  categoria?: CategoriaHistorial;
+  tipo?: 'DEBITO' | 'CREDITO';
+  desde?: string;
+  hasta?: string;
+  q?: string;
 }

@@ -21,6 +21,9 @@ export class BeneficiariosService {
     if (!dto.cuentaNumero && !dto.telefono) throw new BadRequestException('Indica el número de cuenta o el celular del beneficiario');
     // Valida que la cuenta exista (directa o por celular) y guarda el titular enmascarado que vio el cliente
     const destino = dto.telefono ? await this.cuentas.validarCelular(dto.telefono) : await this.cuentas.validarNumero(dto.cuentaNumero!);
+    if ('registrado' in destino && !destino.registrado) {
+      throw new NotFoundException('Ese celular aún no está registrado. Puedes enviarle desde «Nueva transferencia → Celular»: lo recibirá cuando se registre.');
+    }
     const propia = await this.db.one('SELECT 1 FROM cuentas WHERE numero = $1 AND cliente_id = $2', [destino.numero, clienteId]);
     if (propia) throw new BadRequestException('Esa es una de tus cuentas: puedes transferir entre tus cuentas sin guardarla');
     try {

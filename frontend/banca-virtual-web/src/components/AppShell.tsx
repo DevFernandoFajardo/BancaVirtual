@@ -12,6 +12,7 @@ import {
   CalcIcon,
   CardIcon,
   ClipboardIcon,
+  ClockIcon,
   ExchangeIcon,
   HomeIcon,
   PinIcon,
@@ -29,6 +30,7 @@ const GRUPOS = [
       { href: '/transferencias', label: 'Transferir', Icon: SendIcon },
       { href: '/servicios', label: 'Pagar servicios', Icon: BoltIcon },
       { href: '/tarjetas', label: 'Mis tarjetas', Icon: WalletIcon },
+      { href: '/historial', label: 'Historial', Icon: ClockIcon },
     ],
   },
   {
@@ -62,6 +64,7 @@ const TITULOS: { prefijo: string; titulo: string; subtitulo: string }[] = [
   { prefijo: '/transferencias', titulo: 'Transferir', subtitulo: 'Envía dinero, guarda beneficiarios y programa pagos.' },
   { prefijo: '/servicios', titulo: 'Pagar servicios', subtitulo: 'Luz, agua, teléfono e internet desde tu cuenta.' },
   { prefijo: '/tarjetas', titulo: 'Mis tarjetas', subtitulo: 'Límite, saldo, bloqueo y pagos de tus tarjetas.' },
+  { prefijo: '/historial', titulo: 'Historial', subtitulo: 'Todo lo que entra y sale de tus cuentas.' },
   { prefijo: '/gestiones', titulo: 'Gestiones en línea', subtitulo: 'Da seguimiento a tus solicitudes y trámites paso a paso.' },
   { prefijo: '/productos', titulo: 'Productos', subtitulo: 'Solicita tarjetas y créditos y conoce el resultado de tu evaluación.' },
   { prefijo: '/reportes', titulo: 'Mis reportes', subtitulo: 'Descarga en PDF tus estados de cuenta, gestiones y transferencias.' },

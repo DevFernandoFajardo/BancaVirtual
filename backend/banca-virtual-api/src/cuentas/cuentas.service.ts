@@ -18,6 +18,7 @@ import {
   AbonoExternoDto,
   CuentaDesdeCpDto,
   FiltroMovimientosDto,
+  HistorialDto,
   MOVIMIENTO_COLS,
   Movimiento,
   PLAZOS_FIJO,
@@ -96,6 +97,54 @@ export class CuentasService {
     return { items, total, page, limit };
   }
 
+  /**
+   * Historial unificado: cada entrada y salida de dinero de todas las cuentas del cliente
+   * (transferencias, depósitos, pagos de servicios, préstamos, tarjetas, plazo fijo…), de lo más reciente a lo más antiguo.
+   */
+  async historial(clienteId: string, f: HistorialDto) {
+    const page = f.page ?? 1;
+    const limit = f.limit ?? 20;
+    const categoria = `(CASE
+      WHEN m.descripcion LIKE 'Pago de servicio%' OR m.descripcion LIKE 'Reverso de pago de servicio%' THEN 'SERVICIO'
+      WHEN m.descripcion LIKE 'Pago de préstamo%' OR m.descripcion LIKE 'Desembolso de préstamo%' THEN 'PRESTAMO'
+      WHEN m.descripcion LIKE 'Pago de tarjeta%' THEN 'TARJETA'
+      WHEN m.descripcion ILIKE '%plazo fijo%' THEN 'PLAZO'
+      WHEN m.referencia LIKE 'TRF-%' OR m.referencia LIKE 'PEN-%' OR m.descripcion LIKE 'Transferencia%' OR m.descripcion LIKE 'Envío a celular%'
+        OR m.descripcion LIKE 'Cancelación de envío%' OR m.descripcion LIKE 'Devolución de envío%' THEN 'TRANSFERENCIA'
+      WHEN m.descripcion LIKE 'Depósito%' OR m.referencia LIKE 'ABO-%' THEN 'DEPOSITO'
+      ELSE 'OTRO' END)`;
+    const partes = ['c.cliente_id = $1'];
+    const params: unknown[] = [clienteId];
+    const dia = `(m.created_at AT TIME ZONE 'America/Guatemala')::date`;
+    if (f.cuentaId) partes.push(`m.cuenta_id = $${params.push(f.cuentaId)}`);
+    if (f.desde) partes.push(`${dia} >= $${params.push(f.desde)}::date`);
+    if (f.hasta) partes.push(`${dia} <= $${params.push(f.hasta)}::date`);
+    if (f.tipo) partes.push(`m.tipo = $${params.push(f.tipo)}`);
+    if (f.categoria) partes.push(`${categoria} = $${params.push(f.categoria)}`);
+    if (f.q?.trim()) {
+      const like = `%${f.q.trim().replace(/[\\%_]/g, (ch) => '\\' + ch)}%`;
+      const i = params.push(like);
+      partes.push(`(m.descripcion ILIKE $${i} OR m.referencia ILIKE $${i})`);
+    }
+    const cond = partes.join(' AND ');
+    const desde = `FROM movimientos m JOIN cuentas c ON c.id = m.cuenta_id WHERE ${cond}`;
+    const items = await this.db.rows(
+      `SELECT m.id, m.cuenta_id AS "cuentaId", c.numero AS "cuentaNumero", c.tipo AS "cuentaTipo", c.alias AS "cuentaAlias", c.moneda,
+              m.tipo, m.monto::text AS monto, m.saldo_posterior::text AS "saldoPosterior", m.descripcion, m.referencia,
+              ${categoria} AS categoria, m.created_at AS "createdAt"
+         ${desde} ORDER BY m.created_at DESC, m.id DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, limit, (page - 1) * limit],
+    );
+    const r = (await this.db.one<{ total: number; entradas: string; salidas: string }>(
+      `SELECT count(*)::int AS total,
+              COALESCE(SUM(CASE WHEN m.tipo = 'CREDITO' THEN m.monto END), 0)::text AS entradas,
+              COALESCE(SUM(CASE WHEN m.tipo = 'DEBITO' THEN m.monto END), 0)::text AS salidas
+         ${desde}`,
+      params,
+    ))!;
+    return { items, total: r.total, entradas: r.entradas, salidas: r.salidas, page, limit };
+  }
+
   private condicionesMovimientos(cuentaId: string, f: { desde?: string; hasta?: string; tipo?: string; q?: string }) {
     const partes = ['cuenta_id = $1'];
     const params: unknown[] = [cuentaId];
@@ -161,13 +210,25 @@ export class CuentasService {
 
   /** Transferir por celular: devuelve la cuenta que recibe para ese número (titular con apellido enmascarado). */
   async validarCelular(telefono: string) {
-    const r = await this.db.one<{ numero: string }>(
-      `SELECT c.numero FROM clientes cl JOIN cuentas c ON c.id = cl.cuenta_celular_id
-        WHERE cl.telefono = $1 AND c.estado = 'ACTIVA' AND c.tipo <> 'PLAZO_FIJO'`,
-      [telefono],
-    ).catch(() => null);
-    if (!r) throw new NotFoundException('No hay ninguna cuenta asociada a ese número de celular');
-    return this.validarNumero(r.numero);
+    const r = await this.cuentaDeCelular(telefono);
+    if (!r) {
+      // Número sin cuenta: se puede enviar igual, el dinero queda pendiente hasta que alguien lo registre
+      return { registrado: false as const, numero: '', tipo: null, moneda: 'GTQ', titular: 'Número aún no registrado' };
+    }
+    return { ...(await this.validarNumero(r.numero)), registrado: true as const };
+  }
+
+  /** Cuenta que recibe por celular: la elegida en Mi perfil o, si no hay, la cuenta activa más antigua del titular. */
+  async cuentaDeCelular(telefono: string): Promise<{ id: string; numero: string; clienteId: string; moneda: string } | null> {
+    return this.db
+      .one<{ id: string; numero: string; clienteId: string; moneda: string }>(
+        `SELECT c.id, c.numero, c.cliente_id AS "clienteId", c.moneda
+           FROM clientes cl JOIN cuentas c ON c.cliente_id = cl.id
+          WHERE cl.telefono = $1 AND c.estado = 'ACTIVA' AND c.tipo <> 'PLAZO_FIJO'
+          ORDER BY (c.id = cl.cuenta_celular_id) DESC, c.created_at LIMIT 1`,
+        [telefono],
+      )
+      .catch(() => null);
   }
 
   /** Antes de transferir, la app muestra a quién pertenece la cuenta destino (apellido enmascarado). */
