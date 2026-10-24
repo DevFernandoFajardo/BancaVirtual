@@ -148,7 +148,7 @@ export default function ServiciosPage() {
           {modo && (
             <p className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${modo.externo ? 'border-verde/40 text-verde' : 'border-line text-muted'}`}>
               <span className={`h-2 w-2 rounded-full ${modo.externo ? 'bg-verde' : 'bg-muted'}`} aria-hidden="true" />
-              {modo.externo ? `Pagos en línea con ${modo.proveedor}${modo.formato ? ` · ${modo.formato}` : ''}` : 'Proveedor de pagos no configurado'}
+              {modo.externo ? `Pagos en línea con ${modo.proveedor}` : 'Proveedor de pagos no configurado'}
             </p>
           )}
           {cuentas.length === 0 && <Alert tone="info">Necesitas una cuenta activa para pagar servicios.</Alert>}
