@@ -28,6 +28,11 @@ export class CuentasController {
   }
 
   // Debe ir antes de ':id' para que "validar" no se interprete como un id
+  @Get('validar-celular/:telefono')
+  validarCelular(@Param('telefono') telefono: string) {
+    return this.cuentas.validarCelular(telefono.replace(/\D/g, '').slice(0, 8));
+  }
+
   @Get('validar/:numero')
   validar(@Param('numero') numero: string) {
     return this.cuentas.validarNumero(numero);

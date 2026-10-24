@@ -3,6 +3,8 @@ export interface Beneficiario {
   alias: string;
   cuentaNumero: string;
   titular: string;
+  /** Celular con el que se guardó (si fue por celular) */
+  telefono?: string | null;
   createdAt: string;
 }
 

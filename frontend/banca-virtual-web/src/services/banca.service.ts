@@ -41,6 +41,7 @@ export const estadoCuentaService = {
 export const beneficiariosService = {
   listar: () => api<Beneficiario[]>('/beneficiarios'),
   crear: (alias: string, cuentaNumero: string) => api<Beneficiario>('/beneficiarios', { method: 'POST', body: { alias, cuentaNumero } }),
+  crearPorCelular: (alias: string, telefono: string) => api<Beneficiario>('/beneficiarios', { method: 'POST', body: { alias, telefono } }),
   eliminar: (id: string) => api<{ ok: true }>(`/beneficiarios/${id}`, { method: 'DELETE' }),
 };
 

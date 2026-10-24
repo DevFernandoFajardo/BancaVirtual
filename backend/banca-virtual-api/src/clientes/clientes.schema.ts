@@ -1,4 +1,4 @@
-import { IsInt, IsNumber, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { IsInt, IsNumber, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, ValidateIf } from 'class-validator';
 import { Rol } from '../auth/auth.schema';
 import { decrypt } from '../common/crypto.util';
 
@@ -61,4 +61,15 @@ export class UpdatePerfilDto {
   @Min(0)
   @Max(1200)
   antiguedadLaboralMeses?: number;
+}
+
+/** Celular (8 dígitos, Guatemala) y cuenta que recibe las transferencias hechas a ese número. telefono = null lo quita. */
+export class CelularDto {
+  @ValidateIf((o) => o.telefono !== null)
+  @Matches(/^[2-7]\d{7}$/, { message: 'El celular debe tener 8 dígitos' })
+  telefono: string | null;
+
+  @ValidateIf((o) => o.telefono !== null)
+  @IsUUID()
+  cuentaId?: string;
 }

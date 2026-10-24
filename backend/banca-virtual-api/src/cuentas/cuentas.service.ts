@@ -159,6 +159,17 @@ export class CuentasService {
     };
   }
 
+  /** Transferir por celular: devuelve la cuenta que recibe para ese número (titular con apellido enmascarado). */
+  async validarCelular(telefono: string) {
+    const r = await this.db.one<{ numero: string }>(
+      `SELECT c.numero FROM clientes cl JOIN cuentas c ON c.id = cl.cuenta_celular_id
+        WHERE cl.telefono = $1 AND c.estado = 'ACTIVA' AND c.tipo <> 'PLAZO_FIJO'`,
+      [telefono],
+    ).catch(() => null);
+    if (!r) throw new NotFoundException('No hay ninguna cuenta asociada a ese número de celular');
+    return this.validarNumero(r.numero);
+  }
+
   /** Antes de transferir, la app muestra a quién pertenece la cuenta destino (apellido enmascarado). */
   async validarNumero(numero: string) {
     const r = await this.db.one<{

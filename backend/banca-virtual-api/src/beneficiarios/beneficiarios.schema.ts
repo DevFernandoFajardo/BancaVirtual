@@ -1,14 +1,20 @@
-import { IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
 export interface Beneficiario {
   id: string;
   alias: string;
   cuentaNumero: string;
   titular: string;
+  /** Celular con el que se guardó (la cuenta se resuelve al listar) */
+  telefono: string | null;
   createdAt: Date;
 }
 
-export const BENEFICIARIO_COLS = `id, alias, cuenta_numero AS "cuentaNumero", titular, created_at AS "createdAt"`;
+/** Si se guardó por celular, la cuenta es la que ese número tiene asociada hoy; si no, la guardada. */
+export const BENEFICIARIO_COLS = `id, alias,
+  COALESCE((SELECT c.numero FROM clientes cl JOIN cuentas c ON c.id = cl.cuenta_celular_id AND c.estado = 'ACTIVA'
+             WHERE beneficiarios.telefono IS NOT NULL AND cl.telefono = beneficiarios.telefono), cuenta_numero) AS "cuentaNumero",
+  titular, telefono, created_at AS "createdAt"`;
 
 export class CrearBeneficiarioDto {
   @IsString()
@@ -16,6 +22,12 @@ export class CrearBeneficiarioDto {
   @MaxLength(60)
   alias: string;
 
+  @IsOptional()
   @Matches(/^\d{10}$/, { message: 'El número de cuenta debe tener 10 dígitos' })
-  cuentaNumero: string;
+  cuentaNumero?: string;
+
+  /** Alternativa al número de cuenta: el celular (8 dígitos) del destinatario */
+  @IsOptional()
+  @Matches(/^[2-7]\d{7}$/, { message: 'El celular debe tener 8 dígitos' })
+  telefono?: string;
 }

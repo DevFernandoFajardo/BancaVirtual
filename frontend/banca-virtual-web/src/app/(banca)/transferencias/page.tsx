@@ -526,17 +526,43 @@ function EstadoChip({ estado }: { estado: Programada['estado'] }) {
 
 function PanelBeneficiarios({ beneficiarios, onCambio, onError }: { beneficiarios: Beneficiario[]; onCambio: () => Promise<void>; onError: (m: string) => void }) {
   const [alias, setAlias] = useState('');
+  const [tipo, setTipo] = useState<'celular' | 'cuenta'>('celular');
   const [numero, setNumero] = useState('');
+  const [celular, setCelular] = useState('');
+  const [titular, setTitular] = useState<string | null>(null);
+  const [buscando, setBuscando] = useState(false);
+  const [errorCel, setErrorCel] = useState('');
   const [guardando, setGuardando] = useState(false);
+
+  // Al completar el celular se muestra a quién pertenece (apellido enmascarado), como en las apps bancarias
+  useEffect(() => {
+    setTitular(null);
+    setErrorCel('');
+    if (!/^[2-7]\d{7}$/.test(celular)) return;
+    let vigente = true;
+    setBuscando(true);
+    cuentasService
+      .validarCelular(celular)
+      .then((d) => vigente && setTitular(d.titular))
+      .catch((e) => vigente && setErrorCel(errorMessage(e)))
+      .finally(() => vigente && setBuscando(false));
+    return () => {
+      vigente = false;
+    };
+  }, [celular]);
+
+  const listo = tipo === 'celular' ? !!titular : /^\d{10}$/.test(numero);
 
   async function agregar(e: FormEvent) {
     e.preventDefault();
     onError('');
     setGuardando(true);
     try {
-      await beneficiariosService.crear(alias.trim(), numero);
+      if (tipo === 'celular') await beneficiariosService.crearPorCelular(alias.trim(), celular);
+      else await beneficiariosService.crear(alias.trim(), numero);
       setAlias('');
       setNumero('');
+      setCelular('');
       await onCambio();
     } catch (err) {
       onError(errorMessage(err));
@@ -559,10 +585,31 @@ function PanelBeneficiarios({ beneficiarios, onCambio, onError }: { beneficiario
     <div className="space-y-5">
       <Card>
         <h2 className="font-semibold">Agregar beneficiario</h2>
-        <form onSubmit={agregar} className="mt-3 grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+        <div className="mt-3 grid grid-cols-2 gap-1 rounded-[10px] bg-input p-[3px] sm:max-w-xs" role="radiogroup" aria-label="Agregar por">
+          {([['celular', 'Por celular'], ['cuenta', 'Por cuenta']] as const).map(([v, l]) => (
+            <button key={v} type="button" role="radio" aria-checked={tipo === v} onClick={() => setTipo(v)} className={`rounded-[8px] px-3 py-1.5 text-sm font-semibold transition ${tipo === v ? 'bg-card text-ink shadow' : 'text-muted'}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <form onSubmit={agregar} className="mt-4 grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
           <Field label="Alias" maxLength={60} required value={alias} onChange={(e) => setAlias(e.target.value)} placeholder="Ej. Mamá" />
-          <Field label="Número de cuenta" inputMode="numeric" maxLength={10} required value={numero} onChange={(e) => setNumero(e.target.value.replace(/\D/g, ''))} hint="10 dígitos" />
-          <Button type="submit" loading={guardando} disabled={!alias.trim() || !/^\d{10}$/.test(numero)}>
+          {tipo === 'celular' ? (
+            <Field
+              label="Número de celular"
+              inputMode="numeric"
+              maxLength={8}
+              required
+              value={celular}
+              onChange={(e) => setCelular(e.target.value.replace(/\D/g, ''))}
+              placeholder="5555 1234"
+              hint={buscando ? 'Buscando…' : titular ? `Titular: ${titular}` : '8 dígitos'}
+              error={errorCel || undefined}
+            />
+          ) : (
+            <Field label="Número de cuenta" inputMode="numeric" maxLength={10} required value={numero} onChange={(e) => setNumero(e.target.value.replace(/\D/g, ''))} hint="10 dígitos" />
+          )}
+          <Button type="submit" loading={guardando} disabled={!alias.trim() || !listo}>
             Guardar
           </Button>
         </form>
@@ -579,7 +626,12 @@ function PanelBeneficiarios({ beneficiarios, onCambio, onError }: { beneficiario
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold">{b.alias}</p>
                   <p className="truncate text-xs text-muted">
-                    {b.titular} · <span className="tabular">{formatCuenta(b.cuentaNumero)}</span>
+                    {b.titular} ·{' '}
+                    {b.telefono ? (
+                      <span className="tabular">Celular {b.telefono.slice(0, 4)} {b.telefono.slice(4)}</span>
+                    ) : (
+                      <span className="tabular">{formatCuenta(b.cuentaNumero)}</span>
+                    )}
                   </p>
                 </div>
               </div>

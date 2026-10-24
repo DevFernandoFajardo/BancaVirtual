@@ -20,6 +20,9 @@ export const cuentasService = {
   /** Busca a quién pertenece un número de cuenta antes de transferir */
   validarDestino: (numero: string) => api<CuentaDestino>(`/cuentas/validar/${encodeURIComponent(numero)}`),
 
+  /** Busca la cuenta que recibe por un número de celular */
+  validarCelular: (telefono: string) => api<CuentaDestino>(`/cuentas/validar-celular/${encodeURIComponent(telefono)}`),
+
   /** Solo demostración: simula un depósito en ventanilla */
   depositoDemo: (id: string, monto: number) =>
     api<Cuenta>(`/cuentas/${id}/deposito-demo`, { method: 'POST', body: { monto } }),

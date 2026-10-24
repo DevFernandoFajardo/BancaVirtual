@@ -1,6 +1,6 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { blindIndex, encrypt, maskDocument } from '../common/crypto.util';
-import { DatabaseService, Queryable } from '../database/database.service';
+import { DatabaseService, PG_UNIQUE_VIOLATION, Queryable } from '../database/database.service';
 import { CLIENTE_COLS, Cliente, ClienteRow, UpdatePerfilDto, mapCliente } from './clientes.schema';
 
 export interface NuevoCliente {
@@ -48,6 +48,33 @@ export class ClientesService {
       }
       return { ok: true as const, eliminado: fichas.length > 0 };
     });
+  }
+
+  /** Celular registrado y cuenta que recibe las transferencias por celular. */
+  async obtenerCelular(id: string): Promise<{ telefono: string | null; cuentaId: string | null }> {
+    const r = await this.db
+      .one<{ telefono: string | null; cuentaId: string | null }>(`SELECT telefono, cuenta_celular_id AS "cuentaId" FROM clientes WHERE id = $1`, [id])
+      .catch(() => null); // si aún no se corrió 10_celular.sql
+    return r ?? { telefono: null, cuentaId: null };
+  }
+
+  async guardarCelular(id: string, telefono: string | null, cuentaId?: string) {
+    if (telefono === null) {
+      await this.db.query('UPDATE clientes SET telefono = NULL, cuenta_celular_id = NULL, updated_at = now() WHERE id = $1', [id]);
+      return { telefono: null, cuentaId: null };
+    }
+    const cuenta = await this.db.one<{ estado: string; tipo: string }>('SELECT estado, tipo FROM cuentas WHERE id = $1 AND cliente_id = $2', [cuentaId, id]);
+    if (!cuenta) throw new NotFoundException('Cuenta no encontrada');
+    if (cuenta.estado !== 'ACTIVA' || cuenta.tipo === 'PLAZO_FIJO') {
+      throw new UnprocessableEntityException('Elige una cuenta de ahorro o monetaria activa para recibir');
+    }
+    try {
+      await this.db.query('UPDATE clientes SET telefono = $2, cuenta_celular_id = $3, updated_at = now() WHERE id = $1', [id, telefono, cuentaId]);
+    } catch (err: any) {
+      if (err?.code === PG_UNIQUE_VIOLATION) throw new ConflictException('Ese número de celular ya está registrado por otro cliente');
+      throw err;
+    }
+    return { telefono, cuentaId: cuentaId ?? null };
   }
 
   async obtener(id: string): Promise<Cliente> {

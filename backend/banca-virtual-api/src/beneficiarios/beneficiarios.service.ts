@@ -18,17 +18,18 @@ export class BeneficiariosService {
   }
 
   async crear(clienteId: string, dto: CrearBeneficiarioDto) {
-    // Valida que la cuenta exista y guarda el titular enmascarado que vio el cliente
-    const destino = await this.cuentas.validarNumero(dto.cuentaNumero);
-    const propia = await this.db.one('SELECT 1 FROM cuentas WHERE numero = $1 AND cliente_id = $2', [dto.cuentaNumero, clienteId]);
+    if (!dto.cuentaNumero && !dto.telefono) throw new BadRequestException('Indica el número de cuenta o el celular del beneficiario');
+    // Valida que la cuenta exista (directa o por celular) y guarda el titular enmascarado que vio el cliente
+    const destino = dto.telefono ? await this.cuentas.validarCelular(dto.telefono) : await this.cuentas.validarNumero(dto.cuentaNumero!);
+    const propia = await this.db.one('SELECT 1 FROM cuentas WHERE numero = $1 AND cliente_id = $2', [destino.numero, clienteId]);
     if (propia) throw new BadRequestException('Esa es una de tus cuentas: puedes transferir entre tus cuentas sin guardarla');
     try {
       return (await this.db.one<Beneficiario>(
-        `INSERT INTO beneficiarios (cliente_id, alias, cuenta_numero, titular) VALUES ($1, $2, $3, $4) RETURNING ${BENEFICIARIO_COLS}`,
-        [clienteId, dto.alias.trim(), dto.cuentaNumero, destino.titular],
+        `INSERT INTO beneficiarios (cliente_id, alias, cuenta_numero, titular, telefono) VALUES ($1, $2, $3, $4, $5) RETURNING ${BENEFICIARIO_COLS}`,
+        [clienteId, dto.alias.trim(), destino.numero, destino.titular, dto.telefono ?? null],
       ))!;
     } catch (err: any) {
-      if (err?.code === PG_UNIQUE_VIOLATION) throw new ConflictException('Ya guardaste esta cuenta como beneficiario');
+      if (err?.code === PG_UNIQUE_VIOLATION) throw new ConflictException('Ya guardaste este beneficiario');
       throw err;
     }
   }
