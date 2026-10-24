@@ -19,7 +19,7 @@ import { transferenciasService } from '@/services/transferencias/transferencias.
 
 type Paso = 'formulario' | 'confirmar' | 'listo';
 type Pestana = 'nueva' | 'programadas' | 'beneficiarios';
-type Modo = 'propia' | 'beneficiario' | 'otra';
+type Modo = 'propia' | 'beneficiario' | 'celular' | 'otra';
 
 const FRECUENCIA_LABEL: Record<Frecuencia, string> = {
   UNICA: 'Una sola vez',
@@ -63,7 +63,7 @@ export default function TransferenciasPage() {
   const activas = programadas.filter((p) => p.estado === 'ACTIVA' || p.estado === 'PAUSADA').length;
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto w-full max-w-2xl space-y-5">
       <div role="tablist" className="flex gap-1 overflow-x-auto rounded-xl border border-line bg-card p-1">
         <Tab activo={pestana === 'nueva'} onClick={() => setPestana('nueva')}>
           Nueva transferencia
@@ -125,6 +125,10 @@ function NuevaTransferencia({
   const [propiaId, setPropiaId] = useState('');
   const [benefId, setBenefId] = useState('');
   const [numeroLibre, setNumeroLibre] = useState('');
+  const [celular, setCelular] = useState('');
+  const [celDestino, setCelDestino] = useState<CuentaDestino | null>(null);
+  const [buscandoCel, setBuscandoCel] = useState(false);
+  const [errorCel, setErrorCel] = useState('');
   const [monto, setMonto] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [programar, setProgramar] = useState(false);
@@ -135,12 +139,14 @@ function NuevaTransferencia({
   const [comprobante, setComprobante] = useState<ComprobanteTransferencia | null>(null);
   const [aliasNuevo, setAliasNuevo] = useState('');
   const [guardado, setGuardado] = useState(false);
+  const [modoUsado, setModoUsado] = useState<Modo>('otra');
+  const [celularUsado, setCelularUsado] = useState('');
   const [bajando, setBajando] = useState(false);
 
   const origen = origenes.find((c) => c.id === origenId);
   const propias = origenes.filter((c) => c.id !== origenId);
 
-  const numeroDestino = modo === 'propia' ? (propias.find((c) => c.id === propiaId)?.numero ?? '') : modo === 'beneficiario' ? (beneficiarios.find((b) => b.id === benefId)?.cuentaNumero ?? '') : numeroLibre;
+  const numeroDestino = modo === 'propia' ? (propias.find((c) => c.id === propiaId)?.numero ?? '') : modo === 'beneficiario' ? (beneficiarios.find((b) => b.id === benefId)?.cuentaNumero ?? '') : modo === 'celular' ? (celDestino?.numero ?? '') : numeroLibre;
 
   const montoNum = Number(monto);
   const numeroOk = /^\d{10}$/.test(numeroDestino);
@@ -159,6 +165,23 @@ function NuevaTransferencia({
   useEffect(() => {
     if (modo === 'beneficiario' && !beneficiarios.some((b) => b.id === benefId)) setBenefId(beneficiarios[0]?.id ?? '');
   }, [modo, beneficiarios, benefId]);
+
+  // Transferencia móvil: al completar el celular se muestra el titular (apellido enmascarado) y se resuelve su cuenta
+  useEffect(() => {
+    setCelDestino(null);
+    setErrorCel('');
+    if (modo !== 'celular' || !/^[2-7]\d{7}$/.test(celular)) return;
+    let vigente = true;
+    setBuscandoCel(true);
+    cuentasService
+      .validarCelular(celular)
+      .then((d) => vigente && setCelDestino(d))
+      .catch((e) => vigente && setErrorCel(errorMessage(e)))
+      .finally(() => vigente && setBuscandoCel(false));
+    return () => {
+      vigente = false;
+    };
+  }, [modo, celular]);
 
   async function continuar(e: FormEvent) {
     e.preventDefault();
@@ -201,6 +224,8 @@ function NuevaTransferencia({
         descripcion: descripcion.trim() || undefined,
       });
       setComprobante(c);
+      setModoUsado(modo);
+      setCelularUsado(celular);
       setAliasNuevo(destino?.titular.split(' ')[0] ?? '');
       setGuardado(false);
       setPaso('listo');
@@ -216,6 +241,7 @@ function NuevaTransferencia({
   function reiniciar() {
     setPaso('formulario');
     setNumeroLibre('');
+    setCelular('');
     setDestino(null);
     setMonto('');
     setDescripcion('');
@@ -228,7 +254,8 @@ function NuevaTransferencia({
   async function guardarBeneficiario() {
     if (!comprobante) return;
     try {
-      await beneficiariosService.crear(aliasNuevo.trim(), comprobante.cuentaDestino);
+      if (modoUsado === 'celular' && celularUsado) await beneficiariosService.crearPorCelular(aliasNuevo.trim(), celularUsado);
+      else await beneficiariosService.crear(aliasNuevo.trim(), comprobante.cuentaDestino);
       setGuardado(true);
       await onCambio();
     } catch (err) {
@@ -249,17 +276,17 @@ function NuevaTransferencia({
   }
 
   const esPropia = !!comprobante && cuentas.some((c) => c.numero === comprobante.cuentaDestino);
-  const yaBenef = !!comprobante && beneficiarios.some((b) => b.cuentaNumero === comprobante.cuentaDestino);
+  const yaBenef = !!comprobante && (beneficiarios.some((b) => b.cuentaNumero === comprobante.cuentaDestino) || (modoUsado === 'celular' && beneficiarios.some((b) => b.telefono === celularUsado)));
 
   if (origenes.length === 0) return <Alert tone="info">Necesitas una cuenta activa (monetaria o de ahorro) para transferir.</Alert>;
 
   if (paso === 'confirmar' && origen && destino) {
     return (
-      <Card className="space-y-5">
+      <Card className="mx-auto w-full max-w-lg space-y-4">
         <h2 className="text-lg font-semibold">Confirma tu transferencia</h2>
         <dl className="space-y-3 text-sm">
           <Fila k="Desde" v={`${origen.alias ?? TIPO_CUENTA_LABEL[origen.tipo]} · ${formatCuenta(origen.numero)}`} />
-          <Fila k="Para" v={`${destino.titular} · ${formatCuenta(destino.numero)}`} />
+          <Fila k="Para" v={modo === 'celular' ? `${destino.titular} · Celular ${celular.slice(0, 4)} ${celular.slice(4)}` : `${destino.titular} · ${formatCuenta(destino.numero)}`} />
           <Fila k="Monto" v={formatMoney(montoNum, origen.moneda)} fuerte />
           {descripcion.trim() && <Fila k="Descripción" v={descripcion.trim()} />}
         </dl>
@@ -278,7 +305,7 @@ function NuevaTransferencia({
 
   if (paso === 'listo' && comprobante) {
     return (
-      <Card className="space-y-5">
+      <Card className="mx-auto w-full max-w-lg space-y-4">
         <div className="text-center">
           <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-verde-bg text-2xl text-verde" aria-hidden="true">
             ✓
@@ -320,9 +347,10 @@ function NuevaTransferencia({
   }
 
   return (
-    <Card>
-      <form onSubmit={continuar} className="space-y-4" noValidate>
+    <Card className="mx-auto w-full max-w-lg !p-5">
+      <form onSubmit={continuar} className="space-y-3" noValidate>
         <SelectField
+          className="!min-h-10 !py-2 text-sm"
           label="Desde la cuenta"
           value={origenId}
           onChange={(e) => setOrigenId(e.target.value)}
@@ -334,15 +362,18 @@ function NuevaTransferencia({
 
         <div>
           <p className="block text-sm font-semibold">Para</p>
-          <div role="radiogroup" className="mt-1.5 grid grid-cols-3 gap-1 rounded-xl border border-line bg-input p-1">
+          <div role="radiogroup" className="mt-1.5 grid grid-cols-4 gap-1 rounded-xl border border-line bg-input p-1">
             <Segmento activo={modo === 'propia'} onClick={() => setModo('propia')}>
-              Mis cuentas
+              Mías
             </Segmento>
             <Segmento activo={modo === 'beneficiario'} onClick={() => setModo('beneficiario')}>
-              Beneficiario
+              Guardados
+            </Segmento>
+            <Segmento activo={modo === 'celular'} onClick={() => setModo('celular')}>
+              Celular
             </Segmento>
             <Segmento activo={modo === 'otra'} onClick={() => setModo('otra')}>
-              Otra cuenta
+              Cuenta
             </Segmento>
           </div>
         </div>
@@ -371,8 +402,23 @@ function NuevaTransferencia({
             />
           ))}
 
+        {modo === 'celular' && (
+          <Field
+            className="!min-h-10 !py-2"
+            label="Número de celular"
+            inputMode="numeric"
+            maxLength={8}
+            value={celular}
+            onChange={(e) => setCelular(e.target.value.replace(/\D/g, ''))}
+            placeholder="5555 1234"
+            hint={buscandoCel ? 'Buscando…' : celDestino ? `Titular: ${celDestino.titular}` : 'Envía al celular registrado en CP BancaVirtual (8 dígitos)'}
+            error={errorCel || (mismaCuenta ? 'Ese celular corresponde a tu misma cuenta de origen' : undefined)}
+          />
+        )}
+
         {modo === 'otra' && (
           <Field
+            className="!min-h-10 !py-2"
             label="Número de cuenta destino"
             inputMode="numeric"
             maxLength={10}
@@ -383,7 +429,9 @@ function NuevaTransferencia({
           />
         )}
 
+        <div className="grid gap-3 sm:grid-cols-[9rem_1fr]">
         <Field
+          className="!min-h-10 !py-2"
           label="Monto (Q)"
           type="number"
           inputMode="decimal"
@@ -394,25 +442,28 @@ function NuevaTransferencia({
           onChange={(e) => setMonto(e.target.value)}
           error={origen && !programar && montoNum > Number(origen.saldo) ? 'El monto supera el saldo disponible' : undefined}
         />
-        <Field label="Descripción (opcional)" maxLength={140} value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Ej. Pago de almuerzo" />
+        <Field className="!min-h-10 !py-2" label="Descripción (opcional)" maxLength={140} value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Ej. Pago de almuerzo" />
+        </div>
 
-        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-line bg-input p-3.5">
-          <input type="checkbox" checked={programar} onChange={(e) => setProgramar(e.target.checked)} className="mt-1 h-4 w-4 accent-[#5b8dff]" />
+        <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-line bg-input px-3.5 py-2.5">
+          <input type="checkbox" checked={programar} onChange={(e) => setProgramar(e.target.checked)} className="h-4 w-4 accent-[#5b8dff]" />
           <span>
             <span className="block text-sm font-semibold">Programar esta transferencia</span>
-            <span className="text-xs text-muted">Se enviará sola en la fecha y hora elegidas, una vez o de forma recurrente.</span>
+            <span className="text-xs text-muted">Se envía sola en la fecha y hora que elijas.</span>
           </span>
         </label>
 
         {programar && (
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-3">
             <SelectField
+              className="!min-h-10 !py-2 text-sm"
               label="Frecuencia"
               value={frecuencia}
               onChange={(e) => setFrecuencia(e.target.value as Frecuencia)}
               options={(Object.keys(FRECUENCIA_LABEL) as Frecuencia[]).map((f) => ({ value: f, label: FRECUENCIA_LABEL[f] }))}
             />
             <Field
+              className="!min-h-10 !py-2 text-sm"
               label={frecuencia === 'UNICA' ? 'Fecha de envío' : 'Primer envío'}
               type="date"
               min={hoyGT()}
@@ -421,6 +472,7 @@ function NuevaTransferencia({
               error={!fechaOk ? 'La fecha no puede estar en el pasado' : undefined}
             />
             <Field
+              className="!min-h-10 !py-2 text-sm"
               label="Hora de envío"
               type="time"
               value={hora}
@@ -431,7 +483,7 @@ function NuevaTransferencia({
           </div>
         )}
 
-        <Button type="submit" full loading={trabajando} disabled={!origen || !numeroOk || !montoOk || mismaCuenta || !fechaOk || !horaOk}>
+        <Button type="submit" full loading={trabajando} disabled={!origen || !numeroOk || !montoOk || mismaCuenta || !fechaOk || !horaOk || (modo === 'celular' && buscandoCel)}>
           {programar ? 'Programar transferencia' : 'Continuar'}
         </Button>
       </form>
@@ -706,7 +758,7 @@ function Tab({ activo, onClick, children }: { activo: boolean; onClick: () => vo
       role="tab"
       aria-selected={activo}
       onClick={onClick}
-      className={`shrink-0 grow rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors ${activo ? 'bg-brand-600 text-white' : 'text-muted hover:text-ink'}`}
+      className={`shrink-0 grow rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${activo ? 'bg-brand-600 text-white' : 'text-muted hover:text-ink'}`}
     >
       {children}
     </button>
