@@ -4,25 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { Field, SelectField } from '@/components/ui/Field';
 import { PageLoader } from '@/components/ui/Spinner';
-import type { CategoriaHistorial, Cuenta, FiltroHistorial, HistorialItem } from '@/interfaces/cuenta.interface';
+import type { CategoriaHistorial, FiltroHistorial, HistorialItem } from '@/interfaces/cuenta.interface';
 import { errorMessage } from '@/lib/api';
 import { TIPO_CUENTA_LABEL, formatCuenta, formatMoney, hoyGT } from '@/lib/format';
 import { cuentasService } from '@/services/cuentas/cuentas.service';
 
 const PAGE = 20;
 
-const CATEGORIAS: { v: CategoriaHistorial | ''; l: string }[] = [
-  { v: '', l: 'Todos los movimientos' },
-  { v: 'TRANSFERENCIA', l: 'Transferencias' },
-  { v: 'DEPOSITO', l: 'Depósitos y abonos' },
-  { v: 'SERVICIO', l: 'Pagos de servicios' },
-  { v: 'PRESTAMO', l: 'Préstamos' },
-  { v: 'TARJETA', l: 'Pagos de tarjeta' },
-  { v: 'PLAZO', l: 'Plazo fijo' },
-  { v: 'OTRO', l: 'Otros' },
-];
 const ETIQUETA: Record<CategoriaHistorial, string> = {
   TRANSFERENCIA: 'Transferencia',
   DEPOSITO: 'Depósito',
@@ -33,13 +22,6 @@ const ETIQUETA: Record<CategoriaHistorial, string> = {
   OTRO: 'Otro',
 };
 
-const PERIODOS = [
-  { v: '7', l: '7 días' },
-  { v: '30', l: '30 días' },
-  { v: '90', l: '90 días' },
-  { v: 'todo', l: 'Todo' },
-];
-
 const diaGT = (iso: string) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guatemala' }).format(new Date(iso));
 const horaGT = (iso: string) => new Intl.DateTimeFormat('es-GT', { timeZone: 'America/Guatemala', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
 function tituloDia(ymd: string) {
@@ -49,43 +31,15 @@ function tituloDia(ymd: string) {
 }
 
 export default function HistorialPage() {
-  const [cuentas, setCuentas] = useState<Cuenta[] | null>(null);
-  const [cuentaId, setCuentaId] = useState('');
-  const [categoria, setCategoria] = useState<CategoriaHistorial | ''>('');
-  const [tipo, setTipo] = useState<'' | 'CREDITO' | 'DEBITO'>('');
-  const [periodo, setPeriodo] = useState('30');
-  const [q, setQ] = useState('');
-  const [qAplicada, setQAplicada] = useState('');
   const [items, setItems] = useState<HistorialItem[]>([]);
   const [total, setTotal] = useState(0);
-  const [entradas, setEntradas] = useState('0');
-  const [salidas, setSalidas] = useState('0');
   const [cargando, setCargando] = useState(true);
   const [masCargando, setMasCargando] = useState(false);
   const [error, setError] = useState('');
   const pagina = useRef(1);
   const solicitud = useRef(0);
 
-  const filtro = useMemo<FiltroHistorial>(
-    () => ({
-      cuentaId: cuentaId || undefined,
-      categoria: categoria || undefined,
-      tipo: tipo || undefined,
-      desde: periodo === 'todo' ? undefined : hoyGT(-Number(periodo)),
-      q: qAplicada.trim() || undefined,
-    }),
-    [cuentaId, categoria, tipo, periodo, qAplicada],
-  );
-
-  useEffect(() => {
-    cuentasService.listar().then(setCuentas).catch(() => setCuentas([]));
-  }, []);
-
-  // Búsqueda con pequeña espera para no consultar en cada tecla
-  useEffect(() => {
-    const t = setTimeout(() => setQAplicada(q), 350);
-    return () => clearTimeout(t);
-  }, [q]);
+  const filtro = useMemo<FiltroHistorial>(() => ({}), []);
 
   const cargar = useCallback(async () => {
     const id = ++solicitud.current;
@@ -97,8 +51,6 @@ export default function HistorialPage() {
       pagina.current = 1;
       setItems(r.items);
       setTotal(r.total);
-      setEntradas(r.entradas);
-      setSalidas(r.salidas);
     } catch (err) {
       if (id === solicitud.current) setError(errorMessage(err));
     } finally {
@@ -132,82 +84,16 @@ export default function HistorialPage() {
     return [...m.entries()];
   }, [items]);
 
-  if (!cuentas) return <PageLoader />;
-
-  const hayFiltros = !!(cuentaId || categoria || tipo || qAplicada.trim() || periodo !== '30');
-
   return (
     <div className="mx-auto w-full max-w-3xl space-y-4">
-      <div className="grid grid-cols-2 gap-3">
-        <Card className="!p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Entradas</p>
-          <p className="tabular mt-1 text-xl font-bold text-verde sm:text-2xl">+ {formatMoney(entradas)}</p>
-        </Card>
-        <Card className="!p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Salidas</p>
-          <p className="tabular mt-1 text-xl font-bold text-rojo sm:text-2xl">− {formatMoney(salidas)}</p>
-        </Card>
-      </div>
-
-      <Card className="space-y-3 !p-4">
-        <div role="radiogroup" aria-label="Periodo" className="grid grid-cols-4 gap-1 rounded-xl border border-line bg-input p-1">
-          {PERIODOS.map((p) => (
-            <button
-              key={p.v}
-              type="button"
-              role="radio"
-              aria-checked={periodo === p.v}
-              onClick={() => setPeriodo(p.v)}
-              className={`rounded-lg px-2 py-1.5 text-sm font-semibold transition-colors ${periodo === p.v ? 'bg-brand-600 text-white' : 'text-muted hover:text-ink'}`}
-            >
-              {p.l}
-            </button>
-          ))}
-        </div>
-        <div role="radiogroup" aria-label="Tipo" className="grid grid-cols-3 gap-1 rounded-xl border border-line bg-input p-1">
-          {([['', 'Todo'], ['CREDITO', 'Entradas'], ['DEBITO', 'Salidas']] as const).map(([v, l]) => (
-            <button
-              key={v}
-              type="button"
-              role="radio"
-              aria-checked={tipo === v}
-              onClick={() => setTipo(v)}
-              className={`rounded-lg px-2 py-1.5 text-sm font-semibold transition-colors ${tipo === v ? 'bg-brand-600 text-white' : 'text-muted hover:text-ink'}`}
-            >
-              {l}
-            </button>
-          ))}
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <SelectField
-            className="!min-h-10 !py-2 text-sm"
-            label="Cuenta"
-            value={cuentaId}
-            onChange={(e) => setCuentaId(e.target.value)}
-            options={[{ value: '', label: 'Todas mis cuentas' }, ...cuentas.map((c) => ({ value: c.id, label: `${c.alias ?? TIPO_CUENTA_LABEL[c.tipo]} · ${formatCuenta(c.numero)}` }))]}
-          />
-          <SelectField
-            className="!min-h-10 !py-2 text-sm"
-            label="Tipo de movimiento"
-            value={categoria}
-            onChange={(e) => setCategoria(e.target.value as CategoriaHistorial | '')}
-            options={CATEGORIAS.map((c) => ({ value: c.v, label: c.l }))}
-          />
-        </div>
-        <Field className="!min-h-10 !py-2 text-sm" label="Buscar" value={q} onChange={(e) => setQ(e.target.value)} maxLength={60} placeholder="Descripción o referencia" />
-      </Card>
-
       {error && <Alert tone="error">{error}</Alert>}
 
       {cargando ? (
         <PageLoader />
       ) : items.length === 0 ? (
-        <Card className="text-center text-sm text-muted">{hayFiltros ? 'No hay movimientos con esos filtros.' : 'Aún no tienes movimientos.'}</Card>
+        <Card className="text-center text-sm text-muted">Aún no tienes movimientos.</Card>
       ) : (
         <>
-          <p className="px-1 text-xs text-muted">
-            {total} {total === 1 ? 'movimiento' : 'movimientos'}
-          </p>
           {grupos.map(([dia, lista]) => (
             <section key={dia} className="space-y-1.5">
               <h2 className="px-1 text-xs font-bold uppercase tracking-wide text-muted first-letter:uppercase">{tituloDia(dia)}</h2>
