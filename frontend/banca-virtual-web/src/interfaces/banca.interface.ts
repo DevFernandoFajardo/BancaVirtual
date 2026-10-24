@@ -17,6 +17,8 @@ export interface Programada {
   descripcion: string;
   frecuencia: Frecuencia;
   proximaEjecucion: string;
+  /** HH:MM (hora de Guatemala) */
+  hora?: string;
   estado: 'ACTIVA' | 'PAUSADA' | 'COMPLETADA' | 'CANCELADA';
   ultimaEjecucion: string | null;
   ultimoError: string | null;
@@ -30,6 +32,8 @@ export interface CrearProgramadaRequest {
   descripcion?: string;
   frecuencia: Frecuencia;
   fecha: string;
+  /** HH:MM, hora de Guatemala */
+  hora?: string;
 }
 
 export interface ComprobanteGuardado {

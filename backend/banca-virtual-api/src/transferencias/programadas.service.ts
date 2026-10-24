@@ -16,9 +16,10 @@ import { TransferenciasService } from './transferencias.service';
 
 const COLS = `p.id, p.cuenta_origen_id AS "cuentaOrigenId", co.numero AS "cuentaOrigenNumero",
   p.cuenta_destino_numero AS "cuentaDestinoNumero", p.monto::float8 AS monto, p.descripcion, p.frecuencia,
-  p.proxima_ejecucion::text AS "proximaEjecucion", p.estado, p.ultima_ejecucion AS "ultimaEjecucion",
+  p.proxima_ejecucion::text AS "proximaEjecucion", to_char(p.hora_ejecucion, 'HH24:MI') AS "hora", p.estado, p.ultima_ejecucion AS "ultimaEjecucion",
   p.ultimo_error AS "ultimoError", p.created_at AS "createdAt"`;
-const HOY = `(now() AT TIME ZONE 'America/Guatemala')::date`;
+const AHORA = `(now() AT TIME ZONE 'America/Guatemala')`;
+const HOY = `${AHORA}::date`;
 
 /** Transferencias programadas: se ejecutan solas cada minuto (y también al consultar la lista). */
 @Injectable()
@@ -67,16 +68,19 @@ export class ProgramadasService implements OnModuleInit, OnModuleDestroy {
     const max = Number(this.config.get('MAX_TRANSFER_AMOUNT') ?? 50000);
     if (dto.monto > max) throw new UnprocessableEntityException(`El monto máximo por transferencia es Q${max.toFixed(2)}`);
 
-    const hoy = (await this.db.one<{ d: string }>(`SELECT ${HOY}::text AS d`))!.d;
-    if (dto.fecha < hoy) throw new BadRequestException('La fecha de la primera ejecución no puede estar en el pasado');
+    const ahora = (await this.db.one<{ d: string; h: string }>(`SELECT ${HOY}::text AS d, to_char(${AHORA}, 'HH24:MI') AS h`))!;
+    if (dto.fecha < ahora.d) throw new BadRequestException('La fecha de la primera ejecución no puede estar en el pasado');
+    // Sin hora: ahora mismo si es para hoy; si no, a las 08:00
+    const hora = dto.hora ?? (dto.fecha === ahora.d ? ahora.h : '08:00');
+    if (dto.fecha === ahora.d && hora < ahora.h) throw new BadRequestException('La hora de envío ya pasó. Elige una hora posterior a la actual.');
 
     const row = await this.db.one<{ id: string }>(
       `INSERT INTO transferencias_programadas
-         (cliente_id, cuenta_origen_id, cuenta_destino_numero, monto, descripcion, frecuencia, proxima_ejecucion)
-       VALUES ($1, $2, $3, $4, $5, $6, $7::date) RETURNING id`,
-      [clienteId, origen.id, dto.cuentaDestinoNumero, dto.monto.toFixed(2), dto.descripcion?.trim() || 'Transferencia programada', dto.frecuencia, dto.fecha],
+         (cliente_id, cuenta_origen_id, cuenta_destino_numero, monto, descripcion, frecuencia, proxima_ejecucion, hora_ejecucion)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8::time) RETURNING id`,
+      [clienteId, origen.id, dto.cuentaDestinoNumero, dto.monto.toFixed(2), dto.descripcion?.trim() || 'Transferencia programada', dto.frecuencia, dto.fecha, hora],
     );
-    await this.ejecutarVencidas(); // si es para hoy, se ejecuta de inmediato
+    await this.ejecutarVencidas(); // si es para ahora, se ejecuta de inmediato
     return this.una(clienteId, row!.id);
   }
 
@@ -118,7 +122,7 @@ export class ProgramadasService implements OnModuleInit, OnModuleDestroy {
               ELSE proxima_ejecucion END,
             estado = CASE WHEN frecuencia = 'UNICA' THEN 'COMPLETADA' ELSE estado END,
             ultima_ejecucion = now()
-          WHERE estado = 'ACTIVA' AND proxima_ejecucion <= ${HOY}
+          WHERE estado = 'ACTIVA' AND (proxima_ejecucion + hora_ejecucion) <= ${AHORA}
           RETURNING id, cliente_id AS "clienteId", cuenta_origen_id AS "origenId", cuenta_destino_numero AS destino,
                     monto::text AS monto, descripcion, frecuencia`,
       );

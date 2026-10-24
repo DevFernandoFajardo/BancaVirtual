@@ -130,6 +130,7 @@ function NuevaTransferencia({
   const [programar, setProgramar] = useState(false);
   const [frecuencia, setFrecuencia] = useState<Frecuencia>('UNICA');
   const [fecha, setFecha] = useState(hoyGT(1));
+  const [hora, setHora] = useState('08:00');
   const [destino, setDestino] = useState<CuentaDestino | null>(null);
   const [comprobante, setComprobante] = useState<ComprobanteTransferencia | null>(null);
   const [aliasNuevo, setAliasNuevo] = useState('');
@@ -146,6 +147,8 @@ function NuevaTransferencia({
   const montoOk = montoNum > 0 && (!origen || programar || montoNum <= Number(origen.saldo));
   const mismaCuenta = !!origen && origen.numero === numeroDestino;
   const fechaOk = !programar || fecha >= hoyGT();
+  const ahoraGT = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Guatemala', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
+  const horaOk = !programar || (/^\d{2}:\d{2}$/.test(hora) && !(fecha === hoyGT() && hora < ahoraGT));
 
   useEffect(() => {
     if (!origenId && origenes[0]) setOrigenId(origenes[0].id);
@@ -171,6 +174,7 @@ function NuevaTransferencia({
           descripcion: descripcion.trim() || undefined,
           frecuencia,
           fecha,
+          hora,
         });
         await onCambio();
         reiniciar();
@@ -396,12 +400,12 @@ function NuevaTransferencia({
           <input type="checkbox" checked={programar} onChange={(e) => setProgramar(e.target.checked)} className="mt-1 h-4 w-4 accent-[#5b8dff]" />
           <span>
             <span className="block text-sm font-semibold">Programar esta transferencia</span>
-            <span className="text-xs text-muted">Se enviará sola en la fecha elegida, una vez o de forma recurrente.</span>
+            <span className="text-xs text-muted">Se enviará sola en la fecha y hora elegidas, una vez o de forma recurrente.</span>
           </span>
         </label>
 
         {programar && (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
             <SelectField
               label="Frecuencia"
               value={frecuencia}
@@ -416,10 +420,18 @@ function NuevaTransferencia({
               onChange={(e) => setFecha(e.target.value)}
               error={!fechaOk ? 'La fecha no puede estar en el pasado' : undefined}
             />
+            <Field
+              label="Hora de envío"
+              type="time"
+              value={hora}
+              onChange={(e) => setHora(e.target.value)}
+              hint="Hora de Guatemala"
+              error={!horaOk ? (fecha === hoyGT() ? 'Esa hora ya pasó. Elige una posterior a la actual.' : 'Elige una hora válida') : undefined}
+            />
           </div>
         )}
 
-        <Button type="submit" full loading={trabajando} disabled={!origen || !numeroOk || !montoOk || mismaCuenta || !fechaOk}>
+        <Button type="submit" full loading={trabajando} disabled={!origen || !numeroOk || !montoOk || mismaCuenta || !fechaOk || !horaOk}>
           {programar ? 'Programar transferencia' : 'Continuar'}
         </Button>
       </form>
@@ -472,7 +484,7 @@ function ListaProgramadas({ programadas, onCambio, onError }: { programadas: Pro
             </div>
             {(p.estado === 'ACTIVA' || p.estado === 'PAUSADA') && (
               <p className="text-sm">
-                Próximo envío: <b>{formatFecha(p.proximaEjecucion)}</b>
+                Próximo envío: <b>{formatFecha(p.proximaEjecucion)}{p.hora ? ` a las ${p.hora}` : ''}</b>
               </p>
             )}
             {p.ultimoError && <Alert tone="error">Último intento fallido: {p.ultimoError}</Alert>}

@@ -13,6 +13,8 @@ export interface Programada {
   descripcion: string;
   frecuencia: Frecuencia;
   proximaEjecucion: string;
+  /** HH:MM, hora de Guatemala */
+  hora: string;
   estado: 'ACTIVA' | 'PAUSADA' | 'COMPLETADA' | 'CANCELADA';
   ultimaEjecucion: Date | null;
   ultimoError: string | null;
@@ -44,4 +46,9 @@ export class CrearProgramadaDto {
   /** Fecha de la primera ejecución, YYYY-MM-DD (hora de Guatemala) */
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'fecha debe tener formato YYYY-MM-DD' })
   fecha: string;
+
+  /** Hora de envío, HH:MM (hora de Guatemala). Si no se indica: ahora si la fecha es hoy, o las 08:00 */
+  @IsOptional()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'hora debe tener formato HH:MM' })
+  hora?: string;
 }
