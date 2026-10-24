@@ -20,7 +20,7 @@ export class TransferenciasService {
    * Débito + crédito + registro ocurren en UNA transacción; las dos cuentas se bloquean
    * (SELECT ... FOR UPDATE, siempre en orden de id) para evitar saldos inconsistentes y deadlocks.
    */
-  async transferir(clienteId: string, dto: CrearTransferenciaDto) {
+  async transferir(clienteId: string, dto: CrearTransferenciaDto, movil = false) {
     const max = Number(this.config.get('MAX_TRANSFER_AMOUNT') ?? 50000);
     if (dto.monto > max) {
       throw new UnprocessableEntityException(`El monto máximo por transferencia es Q${max.toFixed(2)}`);
@@ -113,8 +113,10 @@ export class TransferenciasService {
       await this.notificaciones.crear(
         _destinoClienteId,
         'MOVIMIENTO',
-        'Transferencia recibida',
-        `Recibiste Q${comprobante.monto.toFixed(2)} en tu cuenta ${comprobante.cuentaDestino}. Ref. ${comprobante.referencia}.`,
+        movil ? 'Transferencia móvil' : 'Transferencia recibida',
+        movil
+          ? `Recibiste Q${comprobante.monto.toFixed(2)}. Ref. ${comprobante.referencia}.`
+          : `Recibiste Q${comprobante.monto.toFixed(2)} en tu cuenta ${comprobante.cuentaDestino}. Ref. ${comprobante.referencia}.`,
         '/transferencias',
       );
     }

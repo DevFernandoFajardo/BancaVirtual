@@ -73,12 +73,11 @@ export class PendientesCelularService implements OnModuleInit, OnModuleDestroy {
   async enviar(clienteId: string, dto: CrearTransferenciaCelularDto) {
     const destino = await this.cuentas.cuentaDeCelular(dto.telefono);
     if (destino) {
-      const c = await this.transferencias.transferir(clienteId, {
-        cuentaOrigenId: dto.cuentaOrigenId,
-        cuentaDestinoNumero: destino.numero,
-        monto: dto.monto,
-        descripcion: dto.descripcion,
-      });
+      const c = await this.transferencias.transferir(
+        clienteId,
+        { cuentaOrigenId: dto.cuentaOrigenId, cuentaDestinoNumero: destino.numero, monto: dto.monto, descripcion: dto.descripcion },
+        true,
+      );
       return { ...c, pendiente: false as const };
     }
 
@@ -211,8 +210,8 @@ export class PendientesCelularService implements OnModuleInit, OnModuleDestroy {
     await this.notificaciones.crear(
       clienteDestino,
       'MOVIMIENTO',
-      'Transferencia recibida',
-      `Recibiste Q${p.monto.toFixed(2)} por tu celular en la cuenta ${cuentaNumero}. Ref. ${p.referencia}.`,
+      'Transferencia móvil',
+      `Recibiste Q${p.monto.toFixed(2)}. Ref. ${p.referencia}.`,
       '/transferencias',
     );
     await this.notificaciones.crear(

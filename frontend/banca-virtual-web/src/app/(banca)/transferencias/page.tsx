@@ -230,10 +230,12 @@ function NuevaTransferencia({
     onError('');
     setTrabajando(true);
     try {
-      if (modo === 'celular') {
+      // Transferencia móvil: a un celular escrito o a un beneficiario guardado por celular
+      const telMovil = modo === 'celular' ? celular : modo === 'beneficiario' ? (beneficiarios.find((b) => b.id === benefId)?.telefono ?? '') : '';
+      if (telMovil) {
         const r = await transferenciasService.crearCelular({
           cuentaOrigenId: origen.id,
-          telefono: celular,
+          telefono: telMovil,
           monto: montoNum,
           descripcion: descripcion.trim() || undefined,
         });
@@ -246,7 +248,7 @@ function NuevaTransferencia({
         const { pendiente: _p, ...comp } = r;
         setComprobante(comp);
         setModoUsado(modo);
-        setCelularUsado(celular);
+        setCelularUsado(telMovil);
         setAliasNuevo(destino?.titular.split(' ')[0] ?? '');
         setGuardado(false);
         setPaso('listo');
