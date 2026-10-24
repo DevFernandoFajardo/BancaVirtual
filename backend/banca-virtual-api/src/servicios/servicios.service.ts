@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { fromCents, toCents } from '../common/money.util';
 import { CUENTA_COLS, Cuenta } from '../cuentas/cuentas.schema';
@@ -23,7 +23,10 @@ export class ServiciosService {
    * mantener el historial y se refresca cada 5 min); si la API no responde se usa lo último guardado.
    */
   async catalogo() {
-    if (this.proveedor.activo && Date.now() - this.catalogoSync > 5 * 60_000) {
+    if (!this.proveedor.activo) {
+      throw new ServiceUnavailableException('El servicio de pagos externo no está configurado (SERVICIOS_API_URL). Intenta más tarde.');
+    }
+    if (Date.now() - this.catalogoSync > 5 * 60_000) {
       try {
         const lista = await this.proveedor.catalogo();
         if (lista.length) {
@@ -44,20 +47,23 @@ export class ServiciosService {
     const filas = await this.db.rows<{ codigo: string; nombre: string; categoria: string; referenciaEtiqueta: string }>(
       `SELECT codigo, nombre, categoria, referencia_etiqueta AS "referenciaEtiqueta" FROM servicios_pago ORDER BY categoria, nombre`,
     );
-    // Con proveedor activo solo se ofrecen los servicios que él publica
-    return this.proveedor.activo && this.codigosProveedor ? filas.filter((f) => this.codigosProveedor!.has(f.codigo)) : filas;
+    // Solo se ofrecen los servicios que publica el proveedor externo
+    if (!this.codigosProveedor) {
+      throw new ServiceUnavailableException('No se pudo consultar el catálogo del proveedor de servicios. Intenta de nuevo en unos minutos.');
+    }
+    return filas.filter((f) => this.codigosProveedor!.has(f.codigo));
   }
 
   private codigosProveedor: Set<string> | null = null;
 
   /** Estado de la integración (para mostrar en la pantalla: "Pagos en línea con proveedor" vs. modo simulado). */
   modo() {
-    return { externo: this.proveedor.activo, proveedor: this.proveedor.activo ? this.proveedor.nombre : 'Simulado' };
+    return { externo: this.proveedor.activo, proveedor: this.proveedor.activo ? this.proveedor.nombre : 'Sin configurar', formato: this.proveedor.formato.toUpperCase() };
   }
 
   /** Consulta al proveedor cuánto debe el contrato (si ofrece esa consulta). */
   async consultar(dto: ConsultarServicioDto) {
-    if (!this.proveedor.activo) return { disponible: false };
+    if (!this.proveedor.activo) throw new ServiceUnavailableException('El servicio de pagos externo no está configurado');
     const c = await this.proveedor.consultar(dto.servicioCodigo, dto.contrato.trim());
     return c ? { disponible: true, ...c } : { disponible: false };
   }
@@ -68,11 +74,10 @@ export class ServiciosService {
       'SELECT codigo, nombre FROM servicios_pago WHERE codigo = $1',
       [dto.servicioCodigo],
     );
-    if (!servicio || (this.proveedor.activo && this.codigosProveedor && !this.codigosProveedor.has(servicio.codigo))) {
+    if (!servicio || !this.codigosProveedor || !this.codigosProveedor.has(servicio.codigo)) {
       throw new NotFoundException('Servicio no encontrado');
     }
 
-    const externo = this.proveedor.activo;
     const montoCents = toCents(dto.monto);
     const referencia = 'PAG-' + randomBytes(6).toString('hex').toUpperCase();
     const contrato = dto.contrato.trim();
@@ -93,34 +98,25 @@ export class ServiciosService {
          VALUES ($1, 'DEBITO', $2, $3, $4, $5)`,
         [cuenta.id, fromCents(montoCents), nuevo, `Pago de servicio: ${servicio.nombre} (${contrato})`, referencia],
       );
-      const pago = externo
-        ? await this.db.one<{ createdAt: Date }>(
-            `INSERT INTO pagos_servicios (cliente_id, cuenta_id, servicio_codigo, servicio_nombre, contrato, monto, referencia, estado, proveedor)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDIENTE', $8) RETURNING created_at AS "createdAt"`,
-            [clienteId, cuenta.id, servicio.codigo, servicio.nombre, contrato, fromCents(montoCents), referencia, this.proveedor.nombre],
-            tx,
-          )
-        : await this.db.one<{ createdAt: Date }>(
-            `INSERT INTO pagos_servicios (cliente_id, cuenta_id, servicio_codigo, servicio_nombre, contrato, monto, referencia)
-             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING created_at AS "createdAt"`,
-            [clienteId, cuenta.id, servicio.codigo, servicio.nombre, contrato, fromCents(montoCents), referencia],
-            tx,
-          );
+      const pago = await this.db.one<{ createdAt: Date }>(
+        `INSERT INTO pagos_servicios (cliente_id, cuenta_id, servicio_codigo, servicio_nombre, contrato, monto, referencia, estado, proveedor)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDIENTE', $8) RETURNING created_at AS "createdAt"`,
+        [clienteId, cuenta.id, servicio.codigo, servicio.nombre, contrato, fromCents(montoCents), referencia, this.proveedor.nombre],
+        tx,
+      );
       return { cuentaId: cuenta.id, cuentaNumero: cuenta.numero, saldoDespues: nuevo, fecha: pago!.createdAt };
     });
 
     // Paso 2: el proveedor externo ejecuta el pago. Si falla, se devuelve el dinero (reverso) y se informa al cliente.
-    let autorizacion: string | null = null;
-    if (externo) {
-      try {
-        autorizacion = (await this.proveedor.pagar({ servicio: servicio.codigo, contrato, monto: dto.monto, referencia })).autorizacion;
-        await this.db.query(`UPDATE pagos_servicios SET estado = 'APROBADO', autorizacion = $2 WHERE referencia = $1`, [referencia, autorizacion]);
-      } catch (err: any) {
-        await this.revertir(r.cuentaId, montoCents, servicio.nombre, referencia);
-        if (err?.incierto) await this.proveedor.reversar(referencia); // el proveedor pudo haberlo procesado: se le pide anular
-        this.logger.warn(`Pago ${referencia} revertido: ${err?.message}`);
-        throw err;
-      }
+    let autorizacion: string;
+    try {
+      autorizacion = (await this.proveedor.pagar({ servicio: servicio.codigo, contrato, monto: dto.monto, referencia })).autorizacion;
+      await this.db.query(`UPDATE pagos_servicios SET estado = 'APROBADO', autorizacion = $2 WHERE referencia = $1`, [referencia, autorizacion]);
+    } catch (err: any) {
+      await this.revertir(r.cuentaId, montoCents, servicio.nombre, referencia);
+      if (err?.incierto) await this.proveedor.reversar(referencia); // el proveedor pudo haberlo procesado: se le pide anular
+      this.logger.warn(`Pago ${referencia} revertido: ${err?.message}`);
+      throw err;
     }
 
     await this.notificaciones.crear(
@@ -139,7 +135,7 @@ export class ServiciosService {
       saldoDespues: Number(r.saldoDespues),
       fecha: r.fecha,
       autorizacion,
-      proveedor: externo ? this.proveedor.nombre : null,
+      proveedor: this.proveedor.nombre,
     };
   }
 

@@ -1,6 +1,7 @@
 import { BadGatewayException, Injectable, Logger, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
+import { XMLParser } from 'fast-xml-parser';
 
 export interface ServicioProveedor {
   codigo: string;
@@ -21,24 +22,32 @@ export interface PagoProveedor {
 
 /**
  * Cliente de la API EXTERNA de pago de servicios (luz, agua, telefonía…). Contrato completo en docs/API-SERVICIOS-EXTERNA.md.
- * Variables: SERVICIOS_API_URL, SERVICIOS_API_KEY (Bearer), SERVICIOS_API_TIMEOUT_MS (20000 por omisión).
- * Si SERVICIOS_API_URL no está definida, `activo` es false y el módulo usa el catálogo local simulado.
+ * Variables: SERVICIOS_API_URL, SERVICIOS_API_KEY (Bearer), SERVICIOS_API_FORMATO (json | xml; json por omisión),
+ * SERVICIOS_API_TIMEOUT_MS (45000 por omisión: un servicio gratuito dormido tarda en despertar).
+ * Los pagos de servicios SIEMPRE pasan por esta API externa: sin SERVICIOS_API_URL el módulo no ofrece servicios.
+ * Formatos: JSON o XML (mismo contrato, ver docs/API-SERVICIOS-EXTERNA.md).
  */
 @Injectable()
 export class ProveedorServiciosClient {
   private readonly logger = new Logger(ProveedorServiciosClient.name);
   private readonly http: AxiosInstance | null;
   readonly nombre: string;
+  readonly formato: 'json' | 'xml';
+  private readonly xml = new XMLParser({ ignoreAttributes: true, parseTagValue: false, trimValues: true });
 
   constructor(config: ConfigService) {
     const base = (config.get<string>('SERVICIOS_API_URL') ?? '').trim().replace(/\/+$/, '');
     const key = (config.get<string>('SERVICIOS_API_KEY') ?? '').trim();
     this.nombre = (config.get<string>('SERVICIOS_API_NOMBRE') ?? 'API-SERVICIOS').trim();
+    this.formato = (config.get<string>('SERVICIOS_API_FORMATO') ?? 'json').trim().toLowerCase() === 'xml' ? 'xml' : 'json';
+    const mime = this.formato === 'xml' ? 'application/xml' : 'application/json';
     this.http = base
       ? axios.create({
           baseURL: base,
-          timeout: Number(config.get('SERVICIOS_API_TIMEOUT_MS') ?? 20_000),
-          headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key}`, 'X-Api-Key': key } : {}) },
+          timeout: Number(config.get('SERVICIOS_API_TIMEOUT_MS') ?? 45_000),
+          responseType: 'text',
+          transformResponse: [(d) => d], // se interpreta a mano (JSON o XML)
+          headers: { 'Content-Type': mime, Accept: mime, ...(key ? { Authorization: `Bearer ${key}`, 'X-Api-Key': key } : {}) },
         })
       : null;
   }
@@ -49,7 +58,8 @@ export class ProveedorServiciosClient {
 
   async catalogo(): Promise<ServicioProveedor[]> {
     const r = await this.llamar<any>('GET', '/servicios');
-    const lista: any[] = Array.isArray(r) ? r : (r?.servicios ?? r?.items ?? []);
+    const crudo = r?.servicios ?? r?.items ?? r?.servicio ?? r; // XML: <servicios><servicio>…</servicio></servicios>
+    const lista: any[] = Array.isArray(crudo) ? crudo : crudo && typeof crudo === 'object' && crudo.codigo ? [crudo] : (crudo?.servicio ? [].concat(crudo.servicio) : []);
     return lista
       .map((s) => ({
         codigo: String(s.codigo ?? s.code ?? '').trim().slice(0, 30),
@@ -102,17 +112,50 @@ export class ProveedorServiciosClient {
     }
   }
 
-  private async llamar<T>(metodo: 'GET' | 'POST', ruta: string, body?: unknown, idem?: string): Promise<T> {
+  /** Cuerpo del pedido en el formato configurado. En XML la raíz depende de la operación. */
+  private serializar(ruta: string, body: Record<string, unknown>): string {
+    if (this.formato === 'json') return JSON.stringify(body);
+    const raiz = ruta === '/consultas' ? 'consulta' : ruta === '/pagos/reversa' ? 'reversa' : 'pago';
+    const esc = (v: unknown) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+    return `<?xml version="1.0" encoding="UTF-8"?><${raiz}>${Object.entries(body)
+      .filter(([, v]) => v !== undefined && v !== null)
+      .map(([k, v]) => `<${k}>${esc(v)}</${k}>`)
+      .join('')}</${raiz}>`;
+  }
+
+  /** Respuesta (texto) -> objeto, sea JSON o XML. En XML se quita el elemento raíz (<respuesta>, <error>, <servicios>…). */
+  private interpretar(texto: unknown): any {
+    const t = typeof texto === 'string' ? texto.trim() : '';
+    if (!t) return {};
+    if (t.startsWith('<')) {
+      const o = this.xml.parse(t) as Record<string, unknown>;
+      delete (o as any)['?xml'];
+      const claves = Object.keys(o);
+      return claves.length === 1 ? o[claves[0]] : o;
+    }
+    try {
+      return JSON.parse(t);
+    } catch {
+      return {};
+    }
+  }
+
+  private async llamar<T>(metodo: 'GET' | 'POST', ruta: string, body?: Record<string, unknown>, idem?: string): Promise<T> {
     if (!this.http) throw new ServiceUnavailableException('La API de pago de servicios no está configurada');
     try {
-      const r = await this.http.request({ method: metodo, url: ruta, data: body, headers: idem ? { 'Idempotency-Key': idem } : undefined });
-      const d = r.data;
+      const r = await this.http.request({
+        method: metodo,
+        url: ruta,
+        data: body ? this.serializar(ruta, body) : undefined,
+        headers: idem ? { 'Idempotency-Key': idem } : undefined,
+      });
+      const d = this.interpretar(r.data);
       return (d && typeof d === 'object' && 'data' in d ? d.data : d) as T;
     } catch (err: any) {
       const status: number | undefined = err?.response?.status;
-      const d = err?.response?.data;
+      const d = this.interpretar(err?.response?.data);
       const msg = String(d?.message ?? d?.mensaje ?? d?.error?.message ?? d?.error ?? '').slice(0, 200);
-      this.logger.warn(`${metodo} ${ruta} → ${status ?? err?.code ?? 'sin respuesta'} ${msg}`);
+      this.logger.warn(`${metodo} ${ruta} (${this.formato}) → ${status ?? err?.code ?? 'sin respuesta'} ${msg}`);
       let e: Error;
       if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) {
         e = new UnprocessableEntityException(msg || 'El proveedor rechazó la solicitud');

@@ -192,6 +192,8 @@ export interface ComprobantePrestamo {
 export interface ModoServicios {
   externo: boolean;
   proveedor: string;
+  /** Formato de la integración con el proveedor: JSON o XML */
+  formato?: string;
 }
 
 export interface ConsultaServicio {
